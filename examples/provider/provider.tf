@@ -12,6 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-provider "scaffolding" {
-  # example configuration here
+provider "checkmate" {
+  # no configuration required
 }

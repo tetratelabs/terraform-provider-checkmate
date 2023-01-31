@@ -48,7 +48,6 @@ type HttpHealthResource struct{}
 // Schema implements resource.Resource
 func (*HttpHealthResource) Schema(ctx context.Context, req resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		// This description is used by the documentation generator and the language server.
 		MarkdownDescription: "HTTPS Healthcheck",
 
 		Attributes: map[string]schema.Attribute{
@@ -121,19 +120,6 @@ type HttpHealthResourceModel struct {
 func (r *HttpHealthResource) Metadata(ctx context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
 	resp.TypeName = req.ProviderTypeName + "_http_health"
 }
-
-// func inStringRange(v int64, r string) (bool) {
-// 	for _, interval := range strings.Split(r, ",") {
-// 		if strings.Contains(interval, "-") {
-// 			lr := strings.Split(interval, "-")
-// 			if len(lr) != 2 {
-// 				// error
-// 			}
-// 			if v > lr[0]
-// 		}
-
-// 	}
-// }
 
 func (r *HttpHealthResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
 	var data *HttpHealthResourceModel
@@ -251,14 +237,6 @@ func (r *HttpHealthResource) Update(ctx context.Context, req resource.UpdateRequ
 }
 
 func (r *HttpHealthResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
-	// var data *HttpHealthResourceModel
-
-	// resp.Diagnostics.Append(req.State.Get(ctx, &data)...)
-
-	// if resp.Diagnostics.HasError() {
-	// 	return
-	// }
-
 }
 
 func (r *HttpHealthResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
