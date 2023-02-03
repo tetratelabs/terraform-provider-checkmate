@@ -1,1 +1,3 @@
 docs/examples/**/*.tf
+examples/**/*.tf
+.goreleaser.yml
