@@ -36,20 +36,18 @@ func (r *RetryWindow) Do(action func() bool) RetryResult {
 	lastTry := make(chan bool)
 	go func() {
 		successCount := 0
-		for attempt := 0; attempt < r.MaxTries; attempt++ {
-			// if attempts remaining is fewer than number of required successes remaining
-			if (r.MaxTries - attempt) < (r.ConsecutiveSuccesses - successCount) {
-				lastTry <- true
-				return
-			}
+		retries := 0
+		for retries < r.MaxTries { // short-circuit the failure before timeout expires
 			if action() {
 				successCount++
+				retries = 0 // reset retries
 				if successCount >= r.ConsecutiveSuccesses {
 					success <- true
 					return
 				}
 			} else {
 				successCount = 0
+				retries++
 			}
 			time.Sleep(r.Interval)
 		}
