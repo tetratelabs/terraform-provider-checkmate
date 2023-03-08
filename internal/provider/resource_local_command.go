@@ -121,7 +121,7 @@ func (r *LocalCommandResource) Create(ctx context.Context, req resource.CreateRe
 func (r *LocalCommandResource) RunCommand(ctx context.Context, data *LocalCommandResourceModel, diag *diag.Diagnostics) {
 
 	window := helpers.RetryWindow{
-		MaxTries:             int(data.Retries.ValueInt64()),
+		MaxRetries:           int(data.Retries.ValueInt64()),
 		Timeout:              time.Duration(data.Timeout.ValueInt64()) * time.Millisecond,
 		Interval:             time.Duration(data.Interval.ValueInt64()) * time.Millisecond,
 		ConsecutiveSuccesses: int(data.ConsecutiveSuccesses.ValueInt64()),

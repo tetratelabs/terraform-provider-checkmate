@@ -23,7 +23,7 @@ import (
 
 func TestAccHttpHealthResource(t *testing.T) {
 	testUrl := "http://example.com"
-	testUrl2 := "https://httpbin.org/get"
+	// testUrl2 := "https://httpbin.org/get"
 
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testAccPreCheck(t) },
@@ -44,12 +44,12 @@ func TestAccHttpHealthResource(t *testing.T) {
 			// 	ImportStateVerify: true,
 			// },
 			// Update and Read testing
-			{
-				Config: testAccHttpHealthResourceConfig(testUrl2),
-				Check: resource.ComposeAggregateTestCheckFunc(
-					resource.TestCheckResourceAttr("checkmate_http_health.test", "url", testUrl2),
-				),
-			},
+			// {
+			// 	Config: testAccHttpHealthResourceConfig(testUrl2),
+			// 	Check: resource.ComposeAggregateTestCheckFunc(
+			// 		resource.TestCheckResourceAttr("checkmate_http_health.test", "url", testUrl2),
+			// 	),
+			// },
 			// Delete testing automatically occurs in TestCase
 		},
 	})

@@ -17,6 +17,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -26,10 +27,10 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
-	"github.com/hashicorp/terraform-plugin-log/tflog"
 
 	"github.com/tetratelabs/terraform-provider-checkmate/internal/helpers"
 	"github.com/tetratelabs/terraform-provider-checkmate/internal/modifiers"
@@ -101,6 +102,21 @@ func (*HttpHealthResource) Schema(ctx context.Context, req resource.SchemaReques
 				MarkdownDescription: "Identifier",
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
+			"result_body": schema.StringAttribute{
+				Computed:            true,
+				MarkdownDescription: "Result body",
+				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
+			},
+			"passed": schema.BoolAttribute{
+				Computed:            true,
+				MarkdownDescription: "True if the check passed",
+				PlanModifiers:       []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()},
+			},
+			"ignore_failure": schema.BoolAttribute{
+				Optional:            true,
+				MarkdownDescription: "If set to true, the check will not be considered a failure when it does not pass",
+				PlanModifiers:       []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()},
+			},
 		},
 	}
 }
@@ -115,6 +131,9 @@ type HttpHealthResourceModel struct {
 	StatusCode           types.String `tfsdk:"status_code"`
 	ConsecutiveSuccesses types.Int64  `tfsdk:"consecutive_successes"`
 	Headers              types.Map    `tfsdk:"headers"`
+	IgnoreFailure        types.Bool   `tfsdk:"ignore_failure"`
+	Passed               types.Bool   `tfsdk:"passed"`
+	ResultBody           types.String `tfsdk:"result_body"`
 }
 
 func (r *HttpHealthResource) Metadata(ctx context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -139,6 +158,7 @@ func (r *HttpHealthResource) Create(ctx context.Context, req resource.CreateRequ
 }
 
 func (r *HttpHealthResource) HealthCheck(ctx context.Context, data *HttpHealthResourceModel, diag *diag.Diagnostics) {
+	data.Passed = types.BoolValue(false)
 	endpoint, err := url.Parse(data.URL.ValueString())
 	if err != nil {
 		diag.AddError("Client Error", fmt.Sprintf("Unable to parse url %q, got error %s", data.URL.ValueString(), err))
@@ -171,7 +191,7 @@ func (r *HttpHealthResource) HealthCheck(ctx context.Context, data *HttpHealthRe
 	}
 
 	window := helpers.RetryWindow{
-		MaxTries:             int(data.Retries.ValueInt64()),
+		MaxRetries:           int(data.Retries.ValueInt64()),
 		Timeout:              time.Duration(data.Timeout.ValueInt64()) * time.Millisecond,
 		Interval:             time.Duration(data.Interval.ValueInt64()) * time.Millisecond,
 		ConsecutiveSuccesses: int(data.ConsecutiveSuccesses.ValueInt64()),
@@ -179,7 +199,6 @@ func (r *HttpHealthResource) HealthCheck(ctx context.Context, data *HttpHealthRe
 
 	client := http.DefaultClient
 	result := window.Do(func() bool {
-		tflog.Debug(ctx, "does it get to this point pineapple")
 		httpResponse, err := client.Do(&http.Request{
 			URL:    endpoint,
 			Method: data.Method.ValueString(),
@@ -190,18 +209,34 @@ func (r *HttpHealthResource) HealthCheck(ctx context.Context, data *HttpHealthRe
 			return false
 		}
 
-		return checkCode(httpResponse.StatusCode)
+		success := checkCode(httpResponse.StatusCode)
+		if success {
+			body, err := ioutil.ReadAll(httpResponse.Body)
+			if err != nil {
+				diag.AddWarning("Error reading response body", fmt.Sprintf("%s", err))
+				data.ResultBody = types.StringValue("")
+			} else {
+				data.ResultBody = types.StringValue(string(body))
+			}
+		}
+		return success
 	})
 
 	switch result {
 	case helpers.Success:
-		break
+		data.Passed = types.BoolValue(true)
 	case helpers.TimeoutExceeded:
-		diag.AddError("Timeout exceeded", fmt.Sprintf("Timeout of %d milliseconds exceeded", data.Timeout.ValueInt64()))
-		return
+		diag.AddWarning("Timeout exceeded", fmt.Sprintf("Timeout of %d milliseconds exceeded", data.Timeout.ValueInt64()))
+		if !data.IgnoreFailure.ValueBool() {
+			diag.AddError("Check failed", "The check did not pass and ignore_error is false")
+			return
+		}
 	case helpers.RetriesExceeded:
-		diag.AddError("Retries exceeded", fmt.Sprintf("All %d attempts failed", data.Retries.ValueInt64()))
-		return
+		diag.AddWarning("Retries exceeded", fmt.Sprintf("All %d attempts failed", data.Retries.ValueInt64()))
+		if !data.IgnoreFailure.ValueBool() {
+			diag.AddError("Check failed", "The check did not pass and ignore_error is false")
+			return
+		}
 	}
 
 	data.Id = types.StringValue("example-id")

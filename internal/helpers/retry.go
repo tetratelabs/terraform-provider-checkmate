@@ -17,7 +17,7 @@ package helpers
 import "time"
 
 type RetryWindow struct {
-	MaxTries             int
+	MaxRetries           int
 	Timeout              time.Duration
 	Interval             time.Duration
 	ConsecutiveSuccesses int
@@ -37,7 +37,7 @@ func (r *RetryWindow) Do(action func() bool) RetryResult {
 	go func() {
 		successCount := 0
 		retries := 0
-		for retries < r.MaxTries { // short-circuit the failure before timeout expires
+		for retries < r.MaxRetries { // short-circuit the failure before timeout expires
 			if action() {
 				successCount++
 				retries = 0 // reset retries
