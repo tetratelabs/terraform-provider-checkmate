@@ -56,7 +56,7 @@ func (*HttpHealthResource) Schema(ctx context.Context, req resource.SchemaReques
 				Required:            true,
 			},
 			"retries": schema.Int64Attribute{
-				MarkdownDescription: "Max number of times to retry a failure. Default 5",
+				MarkdownDescription: "Max number of times to retry a failure. Exceeding this number will cause the check to fail even if timeout has not expired yet.\n Default 5.",
 				Optional:            true,
 				Computed:            true,
 				PlanModifiers:       []planmodifier.Int64{modifiers.DefaultInt64(5)},
@@ -86,7 +86,7 @@ func (*HttpHealthResource) Schema(ctx context.Context, req resource.SchemaReques
 				PlanModifiers:       []planmodifier.String{modifiers.DefaultString("200")},
 			},
 			"consecutive_successes": schema.Int64Attribute{
-				MarkdownDescription: "Number of consecutive successes required before the check is considered successful overall. Defaults to 1.\nIf there are fewer retries remaining than this number, the check will fail immediately",
+				MarkdownDescription: "Number of consecutive successes required before the check is considered successful overall. Defaults to 1.",
 				Optional:            true,
 				Computed:            true,
 				PlanModifiers:       []planmodifier.Int64{modifiers.DefaultInt64(1)},
