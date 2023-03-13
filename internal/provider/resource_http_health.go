@@ -17,17 +17,17 @@ package provider
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/url"
 	"strconv"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
-	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -105,17 +105,14 @@ func (*HttpHealthResource) Schema(ctx context.Context, req resource.SchemaReques
 			"result_body": schema.StringAttribute{
 				Computed:            true,
 				MarkdownDescription: "Result body",
-				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
 			"passed": schema.BoolAttribute{
 				Computed:            true,
 				MarkdownDescription: "True if the check passed",
-				PlanModifiers:       []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()},
 			},
 			"ignore_failure": schema.BoolAttribute{
 				Optional:            true,
 				MarkdownDescription: "If set to true, the check will not be considered a failure when it does not pass",
-				PlanModifiers:       []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()},
 			},
 		},
 	}
@@ -141,19 +138,21 @@ func (r *HttpHealthResource) Metadata(ctx context.Context, req resource.Metadata
 }
 
 func (r *HttpHealthResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
-	var data *HttpHealthResourceModel
+	var data HttpHealthResourceModel
 
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &data)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	r.HealthCheck(ctx, data, &resp.Diagnostics)
+	data.Id = types.StringValue(uuid.NewString())
+
+	r.HealthCheck(ctx, &data, &resp.Diagnostics)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, data)...)
 
 }
 
@@ -196,6 +195,7 @@ func (r *HttpHealthResource) HealthCheck(ctx context.Context, data *HttpHealthRe
 		Interval:             time.Duration(data.Interval.ValueInt64()) * time.Millisecond,
 		ConsecutiveSuccesses: int(data.ConsecutiveSuccesses.ValueInt64()),
 	}
+	data.ResultBody = types.StringValue("")
 
 	client := http.DefaultClient
 	result := window.Do(func() bool {
@@ -211,7 +211,7 @@ func (r *HttpHealthResource) HealthCheck(ctx context.Context, data *HttpHealthRe
 
 		success := checkCode(httpResponse.StatusCode)
 		if success {
-			body, err := ioutil.ReadAll(httpResponse.Body)
+			body, err := io.ReadAll(httpResponse.Body)
 			if err != nil {
 				diag.AddWarning("Error reading response body", fmt.Sprintf("%s", err))
 				data.ResultBody = types.StringValue("")
@@ -239,12 +239,10 @@ func (r *HttpHealthResource) HealthCheck(ctx context.Context, data *HttpHealthRe
 		}
 	}
 
-	data.Id = types.StringValue("example-id")
-
 }
 
 func (r *HttpHealthResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
-	var data *HttpHealthResourceModel
+	var data HttpHealthResourceModel
 
 	resp.Diagnostics.Append(req.State.Get(ctx, &data)...)
 
@@ -252,18 +250,18 @@ func (r *HttpHealthResource) Read(ctx context.Context, req resource.ReadRequest,
 		return
 	}
 
-	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, data)...)
 }
 
 func (r *HttpHealthResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
-	var data *HttpHealthResourceModel
+	var data HttpHealthResourceModel
 
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &data)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	r.HealthCheck(ctx, data, &resp.Diagnostics)
+	r.HealthCheck(ctx, &data, &resp.Diagnostics)
 	if resp.Diagnostics.HasError() {
 		return
 	}

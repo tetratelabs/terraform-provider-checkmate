@@ -37,7 +37,7 @@ import (
 var (
 	// these will be set by the goreleaser configuration
 	// to appropriate values for the compiled binary
-	version string = "0.0.1"
+	version string = "0.1.3"
 
 	// goreleaser can also pass the specific commit if you want
 	// commit  string = ""
@@ -51,7 +51,7 @@ func main() {
 
 	opts := providerserver.ServeOpts{
 		// TODO: Update this string with the published name of your provider.
-		Address: "registry.terraform.io/hashicorp/scaffolding",
+		Address: "registry.terraform.io/tetratelabs/checkmate",
 		Debug:   debug,
 	}
 

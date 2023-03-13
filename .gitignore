@@ -1,2 +1,3 @@
 dist/
 terraform-provider-checkmate
+terraform.tfstate*
