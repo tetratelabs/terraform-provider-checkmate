@@ -31,14 +31,14 @@ const (
 	TimeoutExceeded
 )
 
-func (r *RetryWindow) Do(action func() bool) RetryResult {
+func (r *RetryWindow) Do(action func(attempt int, succeses int) bool) RetryResult {
 	success := make(chan bool)
 	lastTry := make(chan bool)
 	go func() {
 		successCount := 0
 		retries := 0
 		for retries < r.MaxRetries { // short-circuit the failure before timeout expires
-			if action() {
+			if action(retries, successCount) {
 				successCount++
 				retries = 0 // reset retries
 				if successCount >= r.ConsecutiveSuccesses {

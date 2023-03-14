@@ -31,6 +31,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/hashicorp/terraform-plugin-log/tflog"
 
 	"github.com/tetratelabs/terraform-provider-checkmate/internal/helpers"
 	"github.com/tetratelabs/terraform-provider-checkmate/internal/modifiers"
@@ -74,6 +75,12 @@ func (*HttpHealthResource) Schema(ctx context.Context, req resource.SchemaReques
 				Computed:            true,
 				PlanModifiers:       []planmodifier.Int64{modifiers.DefaultInt64(5000)},
 			},
+			"request_timeout": schema.Int64Attribute{
+				MarkdownDescription: "Timeout for an individual request. If exceeded, the attempt will be considered failure and potentially retried. Default 500",
+				Optional:            true,
+				Computed:            true,
+				PlanModifiers:       []planmodifier.Int64{modifiers.DefaultInt64(500)},
+			},
 			"interval": schema.Int64Attribute{
 				MarkdownDescription: "Interval in milliseconds between attemps. Default 200",
 				Optional:            true,
@@ -110,9 +117,9 @@ func (*HttpHealthResource) Schema(ctx context.Context, req resource.SchemaReques
 				Computed:            true,
 				MarkdownDescription: "True if the check passed",
 			},
-			"ignore_failure": schema.BoolAttribute{
+			"create_anyway_on_check_failure": schema.BoolAttribute{
 				Optional:            true,
-				MarkdownDescription: "If set to true, the check will not be considered a failure when it does not pass",
+				MarkdownDescription: "If false, the resource will fail to create if the check does not pass. If true, the resource will be created anyway. Defaults to false.",
 			},
 		},
 	}
@@ -124,11 +131,12 @@ type HttpHealthResourceModel struct {
 	Retries              types.Int64  `tfsdk:"retries"`
 	Method               types.String `tfsdk:"method"`
 	Timeout              types.Int64  `tfsdk:"timeout"`
+	RequestTimeout       types.Int64  `tfsdk:"request_timeout"`
 	Interval             types.Int64  `tfsdk:"interval"`
 	StatusCode           types.String `tfsdk:"status_code"`
 	ConsecutiveSuccesses types.Int64  `tfsdk:"consecutive_successes"`
 	Headers              types.Map    `tfsdk:"headers"`
-	IgnoreFailure        types.Bool   `tfsdk:"ignore_failure"`
+	IgnoreFailure        types.Bool   `tfsdk:"create_anyway_on_check_failure"`
 	Passed               types.Bool   `tfsdk:"passed"`
 	ResultBody           types.String `tfsdk:"result_body"`
 }
@@ -197,8 +205,21 @@ func (r *HttpHealthResource) HealthCheck(ctx context.Context, data *HttpHealthRe
 	}
 	data.ResultBody = types.StringValue("")
 
-	client := http.DefaultClient
-	result := window.Do(func() bool {
+	client := http.Client{
+		Timeout: time.Duration(data.RequestTimeout.ValueInt64()) * time.Millisecond,
+	}
+	tflog.Debug(ctx, fmt.Sprintf("Starting HTTP health check. Overall timeout: %d ms, request timeout: %d ms", data.Timeout.ValueInt64(), data.RequestTimeout.ValueInt64()))
+	for h, v := range headers {
+		tflog.Debug(ctx, fmt.Sprintf("%s: %s", h, v))
+	}
+
+	result := window.Do(func(attempt int, successes int) bool {
+		if successes != 0 {
+			tflog.Trace(ctx, fmt.Sprintf("SUCCESS [%d/%d] http %s %s", successes, data.ConsecutiveSuccesses.ValueInt64(), data.Method.ValueString(), endpoint))
+		} else {
+			tflog.Trace(ctx, fmt.Sprintf("ATTEMPT [%d/%d] http %s %s", attempt, data.Retries.ValueInt64(), data.Method.ValueString(), endpoint))
+		}
+
 		httpResponse, err := client.Do(&http.Request{
 			URL:    endpoint,
 			Method: data.Method.ValueString(),
@@ -228,13 +249,13 @@ func (r *HttpHealthResource) HealthCheck(ctx context.Context, data *HttpHealthRe
 	case helpers.TimeoutExceeded:
 		diag.AddWarning("Timeout exceeded", fmt.Sprintf("Timeout of %d milliseconds exceeded", data.Timeout.ValueInt64()))
 		if !data.IgnoreFailure.ValueBool() {
-			diag.AddError("Check failed", "The check did not pass and ignore_error is false")
+			diag.AddError("Check failed", "The check did not pass and create_anyway_on_check_failure is false")
 			return
 		}
 	case helpers.RetriesExceeded:
 		diag.AddWarning("Retries exceeded", fmt.Sprintf("All %d attempts failed", data.Retries.ValueInt64()))
 		if !data.IgnoreFailure.ValueBool() {
-			diag.AddError("Check failed", "The check did not pass and ignore_error is false")
+			diag.AddError("Check failed", "The check did not pass and create_anyway_on_check_failure is false")
 			return
 		}
 	}

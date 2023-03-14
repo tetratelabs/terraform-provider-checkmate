@@ -21,6 +21,7 @@ import (
 	"os/exec"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
@@ -50,13 +51,19 @@ func (*LocalCommandResource) Schema(ctx context.Context, req resource.SchemaRequ
 				Required:            true,
 			},
 			"timeout": schema.Int64Attribute{
-				MarkdownDescription: "Overall timeout in milliseconds for the check before giving up, default 5000",
+				MarkdownDescription: "Overall timeout in milliseconds for the check before giving up, default 10000",
+				Optional:            true,
+				Computed:            true,
+				PlanModifiers:       []planmodifier.Int64{modifiers.DefaultInt64(10000)},
+			},
+			"command_timeout": schema.Int64Attribute{
+				MarkdownDescription: "Timeout for an individual attempt. If exceeded, the attempt will be considered failure and potentially retried. Default 5000ms",
 				Optional:            true,
 				Computed:            true,
 				PlanModifiers:       []planmodifier.Int64{modifiers.DefaultInt64(5000)},
 			},
 			"retries": schema.Int64Attribute{
-				MarkdownDescription: "Max number of times to retry a failure. Default 5",
+				MarkdownDescription: "Max number of times to retry a failure. Exceeding this number will cause the check to fail even if timeout has not expired yet.\n Default 5.",
 				Optional:            true,
 				Computed:            true,
 				PlanModifiers:       []planmodifier.Int64{modifiers.DefaultInt64(5)},
@@ -68,7 +75,7 @@ func (*LocalCommandResource) Schema(ctx context.Context, req resource.SchemaRequ
 				PlanModifiers:       []planmodifier.Int64{modifiers.DefaultInt64(200)},
 			},
 			"consecutive_successes": schema.Int64Attribute{
-				MarkdownDescription: "Number of consecutive successes required before the check is considered successful overall. Defaults to 1.\nIf there are fewer retries remaining than this number, the check will fail immediately",
+				MarkdownDescription: "Number of consecutive successes required before the check is considered successful overall. Defaults to 1.",
 				Optional:            true,
 				Computed:            true,
 				PlanModifiers:       []planmodifier.Int64{modifiers.DefaultInt64(1)},
@@ -79,6 +86,22 @@ func (*LocalCommandResource) Schema(ctx context.Context, req resource.SchemaRequ
 				Computed:            true,
 				PlanModifiers:       []planmodifier.String{modifiers.DefaultString(".")},
 			},
+			"stdout": schema.StringAttribute{
+				MarkdownDescription: "Standard output of the command",
+				Computed:            true,
+			},
+			"stderr": schema.StringAttribute{
+				MarkdownDescription: "Standard error output of the command",
+				Computed:            true,
+			},
+			"passed": schema.BoolAttribute{
+				Computed:            true,
+				MarkdownDescription: "True if the check passed",
+			},
+			"create_anyway_on_check_failure": schema.BoolAttribute{
+				Optional:            true,
+				MarkdownDescription: "If false, the resource will fail to create if the check does not pass. If true, the resource will be created anyway. Defaults to false.",
+			},
 			"id": schema.StringAttribute{
 				Computed:            true,
 				MarkdownDescription: "Identifier",
@@ -88,13 +111,18 @@ func (*LocalCommandResource) Schema(ctx context.Context, req resource.SchemaRequ
 }
 
 type LocalCommandResourceModel struct {
+	Id                   types.String `tfsdk:"id"`
 	Command              types.String `tfsdk:"command"`
 	Timeout              types.Int64  `tfsdk:"timeout"`
+	CommandTimeout       types.Int64  `tfsdk:"command_timeout"`
 	Retries              types.Int64  `tfsdk:"retries"`
 	Interval             types.Int64  `tfsdk:"interval"`
 	ConsecutiveSuccesses types.Int64  `tfsdk:"consecutive_successes"`
 	WorkDir              types.String `tfsdk:"working_directory"`
-	Id                   types.String `tfsdk:"id"`
+	Stdout               types.String `tfsdk:"stdout"`
+	Stderr               types.String `tfsdk:"stderr"`
+	IgnoreFailure        types.Bool   `tfsdk:"create_anyway_on_check_failure"`
+	Passed               types.Bool   `tfsdk:"passed"`
 }
 
 // ImportState implements resource.ResourceWithImportState
@@ -104,21 +132,27 @@ func (*LocalCommandResource) ImportState(ctx context.Context, req resource.Impor
 
 // Create implements resource.Resource
 func (r *LocalCommandResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
-	var data *LocalCommandResourceModel
+	var data LocalCommandResourceModel
 
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &data)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	r.RunCommand(ctx, data, &resp.Diagnostics)
+
+	data.Id = types.StringValue(uuid.NewString())
+
+	r.RunCommand(ctx, &data, &resp.Diagnostics)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, data)...)
 }
 
 func (r *LocalCommandResource) RunCommand(ctx context.Context, data *LocalCommandResourceModel, diag *diag.Diagnostics) {
+	data.Passed = types.BoolValue(false)
+	data.Stdout = types.StringNull()
+	data.Stderr = types.StringNull()
 
 	window := helpers.RetryWindow{
 		MaxRetries:           int(data.Retries.ValueInt64()),
@@ -127,12 +161,14 @@ func (r *LocalCommandResource) RunCommand(ctx context.Context, data *LocalComman
 		ConsecutiveSuccesses: int(data.ConsecutiveSuccesses.ValueInt64()),
 	}
 
-	tflog.Error(ctx, "this is a log message of confusion")
-	result := window.Do(func() bool {
-		tflog.Debug(ctx, "i'm inside the function orange")
+	result := window.Do(func(attempt int, success int) bool {
 		var stdout bytes.Buffer
 		var stderr bytes.Buffer
-		cmd := exec.Command("sh", "-c", data.Command.ValueString())
+
+		commandContext, cancelFunc := context.WithTimeout(ctx, time.Duration(data.CommandTimeout.ValueInt64())*time.Millisecond)
+		defer cancelFunc()
+
+		cmd := exec.CommandContext(commandContext, "sh", "-c", data.Command.ValueString())
 		cmd.Dir = data.WorkDir.ValueString()
 		cmd.Stdout = &stdout
 		cmd.Stderr = &stderr
@@ -140,9 +176,10 @@ func (r *LocalCommandResource) RunCommand(ctx context.Context, data *LocalComman
 		err := cmd.Run()
 		if err != nil {
 			diag.AddWarning("Error running command", fmt.Sprintf("%s", err))
-			tflog.Error(ctx, "why doesnt this happen")
 			return false
 		}
+		data.Stdout = types.StringValue(stdout.String())
+		data.Stderr = types.StringValue(stderr.String())
 		tflog.Debug(ctx, fmt.Sprintf("Command stdout: %s", stdout.String()))
 		tflog.Debug(ctx, fmt.Sprintf("Command stdout: %s", stderr.String()))
 		return true
@@ -150,17 +187,20 @@ func (r *LocalCommandResource) RunCommand(ctx context.Context, data *LocalComman
 
 	switch result {
 	case helpers.Success:
-		break
+		data.Passed = types.BoolValue(true)
 	case helpers.TimeoutExceeded:
-		diag.AddError("Timeout exceeded", fmt.Sprintf("Timeout of %d milliseconds exceeded", data.Timeout.ValueInt64()))
-		return
+		diag.AddWarning("Timeout exceeded", fmt.Sprintf("Timeout of %d milliseconds exceeded", data.Timeout.ValueInt64()))
+		if !data.IgnoreFailure.ValueBool() {
+			diag.AddError("Check failed", "The check did not pass and create_anyway_on_check_failure is false")
+			return
+		}
 	case helpers.RetriesExceeded:
-		diag.AddError("Retries exceeded", fmt.Sprintf("All %d attempts failed", data.Retries.ValueInt64()))
-		return
+		diag.AddWarning("Retries exceeded", fmt.Sprintf("All %d attempts failed", data.Retries.ValueInt64()))
+		if !data.IgnoreFailure.ValueBool() {
+			diag.AddError("Check failed", "The check did not pass and create_anyway_on_check_failure is false")
+			return
+		}
 	}
-
-	data.Id = types.StringValue("example-id")
-	tflog.Trace(ctx, "created resource")
 
 }
 

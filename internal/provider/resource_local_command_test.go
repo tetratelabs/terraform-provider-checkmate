@@ -27,19 +27,26 @@ func TestAccLocalCommandResource(t *testing.T) {
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
 			{
-				Config: testAccLocalCommandResourceConfig("true"),
+				Config: testAccLocalCommandResourceConfig("test_success", "true", false),
 				Check: resource.ComposeAggregateTestCheckFunc(
-					resource.TestCheckResourceAttr("checkmate_local_command.test", "id", "example-id"),
+					resource.TestCheckResourceAttr("checkmate_local_command.test_success", "passed", "true"),
+				),
+			},
+			{
+				Config: testAccLocalCommandResourceConfig("test_failure", "false", true),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("checkmate_local_command.test_failure", "passed", "false"),
 				),
 			},
 		},
 	})
 }
 
-func testAccLocalCommandResourceConfig(command string) string {
+func testAccLocalCommandResourceConfig(name string, command string, ignore_failure bool) string {
 	return fmt.Sprintf(`
-resource "checkmate_local_command" "test" {
-	command = %[1]q
-}`, command)
+resource "checkmate_local_command" %[1]q {
+	command = %[2]q
+	create_anyway_on_check_failure = %[3]t
+}`, name, command, ignore_failure)
 
 }
