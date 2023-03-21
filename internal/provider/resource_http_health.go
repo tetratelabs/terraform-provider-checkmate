@@ -78,7 +78,7 @@ func (*HttpHealthResource) Schema(ctx context.Context, req resource.SchemaReques
 				PlanModifiers:       []planmodifier.Int64{modifiers.DefaultInt64(5000)},
 			},
 			"request_timeout": schema.Int64Attribute{
-				MarkdownDescription: "Timeout for an individual request. If exceeded, the attempt will be considered failure and potentially retried. Default 500",
+				MarkdownDescription: "Timeout for an individual request. If exceeded, the attempt will be considered failure and potentially retried. Default 1000",
 				Optional:            true,
 				Computed:            true,
 				PlanModifiers:       []planmodifier.Int64{modifiers.DefaultInt64(1000)},
@@ -128,9 +128,8 @@ func (*HttpHealthResource) Schema(ctx context.Context, req resource.SchemaReques
 				MarkdownDescription: "The CA bundle to use when connecting to the target host.",
 			},
 			"insecure_tls": schema.BoolAttribute{
-				Optional:      true,
-				Computed:      true,
-				PlanModifiers: []planmodifier.Bool{modifiers.DefaultBool(false)},
+				Optional:            true,
+				MarkdownDescription: "Wether or not to completely skip the TLS CA verification. Default false.",
 			},
 		},
 	}
@@ -229,9 +228,8 @@ func (r *HttpHealthResource) HealthCheck(ctx context.Context, data *HttpHealthRe
 		}
 		tlsConfig.RootCAs = caCertPool
 	}
-	if !data.InsecureTLS.IsNull() {
-		tlsConfig.InsecureSkipVerify = data.InsecureTLS.ValueBool()
-	}
+	tlsConfig.InsecureSkipVerify = data.InsecureTLS.ValueBool()
+
 	client := http.Client{
 		Transport: &http.Transport{
 			TLSClientConfig: tlsConfig,
