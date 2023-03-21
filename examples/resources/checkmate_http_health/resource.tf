@@ -25,3 +25,34 @@ resource "checkmate_http_health" "example" {
     "Example-Header" = "example value"
   }
 }
+
+resource "checkmate_http_health" "example_ca_bundle" {
+  url                   = "https://untrusted-root.badssl.com/"
+  retries               = 10
+  method                = "GET"
+  interval              = 1
+  status_code           = 200
+  consecutive_successes = 2
+  ca_bundle             = file("badssl-root.cert.cer")
+}
+
+resource "checkmate_http_health" "example_no_ca_bundle" {
+  url                   = "https://httpbin.org/status/200"
+  retries               = 10
+  request_timeout       = 1000
+  method                = "GET"
+  interval              = 1
+  status_code           = 200
+  consecutive_successes = 2
+}
+
+resource "checkmate_http_health" "example_insecure_tls" {
+  url                   = "https://self-signed.badssl.com/"
+  retries               = 10
+  request_timeout       = 1000
+  method                = "GET"
+  interval              = 1
+  status_code           = 200
+  consecutive_successes = 2
+  insecure_tls          = true
+}

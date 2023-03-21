@@ -16,6 +16,8 @@ package provider
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"io"
 	"net/http"
@@ -79,7 +81,7 @@ func (*HttpHealthResource) Schema(ctx context.Context, req resource.SchemaReques
 				MarkdownDescription: "Timeout for an individual request. If exceeded, the attempt will be considered failure and potentially retried. Default 500",
 				Optional:            true,
 				Computed:            true,
-				PlanModifiers:       []planmodifier.Int64{modifiers.DefaultInt64(500)},
+				PlanModifiers:       []planmodifier.Int64{modifiers.DefaultInt64(1000)},
 			},
 			"interval": schema.Int64Attribute{
 				MarkdownDescription: "Interval in milliseconds between attemps. Default 200",
@@ -121,6 +123,15 @@ func (*HttpHealthResource) Schema(ctx context.Context, req resource.SchemaReques
 				Optional:            true,
 				MarkdownDescription: "If false, the resource will fail to create if the check does not pass. If true, the resource will be created anyway. Defaults to false.",
 			},
+			"ca_bundle": schema.StringAttribute{
+				Optional:            true,
+				MarkdownDescription: "The CA bundle to use when connecting to the target host.",
+			},
+			"insecure_tls": schema.BoolAttribute{
+				Optional:      true,
+				Computed:      true,
+				PlanModifiers: []planmodifier.Bool{modifiers.DefaultBool(false)},
+			},
 		},
 	}
 }
@@ -139,6 +150,8 @@ type HttpHealthResourceModel struct {
 	IgnoreFailure        types.Bool   `tfsdk:"create_anyway_on_check_failure"`
 	Passed               types.Bool   `tfsdk:"passed"`
 	ResultBody           types.String `tfsdk:"result_body"`
+	CABundle             types.String `tfsdk:"ca_bundle"`
+	InsecureTLS          types.Bool   `tfsdk:"insecure_tls"`
 }
 
 func (r *HttpHealthResource) Metadata(ctx context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -205,9 +218,27 @@ func (r *HttpHealthResource) HealthCheck(ctx context.Context, data *HttpHealthRe
 	}
 	data.ResultBody = types.StringValue("")
 
+	if !data.CABundle.IsNull() && data.InsecureTLS.ValueBool() {
+		diag.AddError("Conflicting configuration", "You cannot specify both custom CA and insecure TLS. Please use only one of them.")
+	}
+	tlsConfig := &tls.Config{}
+	if !data.CABundle.IsNull() {
+		caCertPool := x509.NewCertPool()
+		if ok := caCertPool.AppendCertsFromPEM([]byte(data.CABundle.ValueString())); !ok {
+			diag.AddError("Building CA cert pool", err.Error())
+		}
+		tlsConfig.RootCAs = caCertPool
+	}
+	if !data.InsecureTLS.IsNull() {
+		tlsConfig.InsecureSkipVerify = data.InsecureTLS.ValueBool()
+	}
 	client := http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: tlsConfig,
+		},
 		Timeout: time.Duration(data.RequestTimeout.ValueInt64()) * time.Millisecond,
 	}
+
 	tflog.Debug(ctx, fmt.Sprintf("Starting HTTP health check. Overall timeout: %d ms, request timeout: %d ms", data.Timeout.ValueInt64(), data.RequestTimeout.ValueInt64()))
 	for h, v := range headers {
 		tflog.Debug(ctx, fmt.Sprintf("%s: %s", h, v))
