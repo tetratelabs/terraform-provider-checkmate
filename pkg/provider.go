@@ -20,7 +20,7 @@ import (
 	"github.com/tetratelabs/terraform-provider-checkmate/internal/provider"
 )
 
-var version string = "1.0.0"
+var version string = "1.2.0"
 
 func NewProvider() framework.Provider {
 	return provider.New(version)()
