@@ -20,7 +20,7 @@ test:
 	TF_ACC=1 go test ./... -v $(TESTARGS) -timeout 120m
 
 licenser:
-	licenser verify Tetrate -r
+	licenser apply Tetrate -r
 
 build:
 	go build -v ./...
@@ -32,4 +32,4 @@ docs: install
 	go generate ./...
 
 check: docs licenser
-	[ -z \"$(git status -uno --porcelain)\" ] || (git status && echo 'Check failed. This could be a failed check or dirty git state.'; exit 1)
+	[ -z "`git status -uno --porcelain`" ] || (git status && echo 'Check failed. This could be a failed check or dirty git state.'; exit 1)
