@@ -12,9 +12,24 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-default: testacc
+default: build
 
 # Run acceptance tests
-.PHONY: testacc
-testacc:
+.PHONY: test
+test:
 	TF_ACC=1 go test ./... -v $(TESTARGS) -timeout 120m
+
+licenser:
+	licenser verify Tetrate -r
+
+build:
+	go build -v ./...
+
+install:
+	go install
+
+docs: install
+	go generate ./...
+
+check: docs licenser
+	[ -z \"$(git status -uno --porcelain)\" ] || (git status && echo 'Check failed. This could be a failed check or dirty git state.'; exit 1)

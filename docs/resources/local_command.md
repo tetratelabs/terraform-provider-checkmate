@@ -44,15 +44,20 @@ resource "checkmate_local_command" "example" {
 
 ### Optional
 
+- `command_timeout` (Number) Timeout for an individual attempt. If exceeded, the attempt will be considered failure and potentially retried. Default 5000ms
 - `consecutive_successes` (Number) Number of consecutive successes required before the check is considered successful overall. Defaults to 1.
-If there are fewer retries remaining than this number, the check will fail immediately
+- `create_anyway_on_check_failure` (Boolean) If false, the resource will fail to create if the check does not pass. If true, the resource will be created anyway. Defaults to false.
 - `interval` (Number) Interval in milliseconds between attemps. Default 200
-- `retries` (Number) Max number of times to retry a failure. Default 5
-- `timeout` (Number) Overall timeout in milliseconds for the check before giving up, default 5000
+- `retries` (Number) Max number of times to retry a failure. Exceeding this number will cause the check to fail even if timeout has not expired yet.
+ Default 5.
+- `timeout` (Number) Overall timeout in milliseconds for the check before giving up, default 10000
 - `working_directory` (String) Working directory where the command will be run. Defaults to the current working directory
 
 ### Read-Only
 
 - `id` (String) Identifier
+- `passed` (Boolean) True if the check passed
+- `stderr` (String) Standard error output of the command
+- `stdout` (String) Standard output of the command
 
 
