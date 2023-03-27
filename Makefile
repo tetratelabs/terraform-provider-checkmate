@@ -28,8 +28,11 @@ build:
 install:
 	go install
 
+format:
+	go fmt ./...
+
 docs: install
 	go generate ./...
 
-check: docs licenser
+check: docs licenser format
 	[ -z "`git status -uno --porcelain`" ] || (git status && echo 'Check failed. This could be a failed check or dirty git state.'; exit 1)
