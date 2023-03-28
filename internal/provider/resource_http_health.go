@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -105,6 +106,10 @@ func (*HttpHealthResource) Schema(ctx context.Context, req resource.SchemaReques
 				MarkdownDescription: "Identifier",
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
+			"request_body": schema.StringAttribute{
+				MarkdownDescription: "Optional request body to send on each attempt.",
+				Optional:            true,
+			},
 			"result_body": schema.StringAttribute{
 				Computed:            true,
 				MarkdownDescription: "Result body",
@@ -141,6 +146,7 @@ type HttpHealthResourceModel struct {
 	Headers              types.Map    `tfsdk:"headers"`
 	IgnoreFailure        types.Bool   `tfsdk:"create_anyway_on_check_failure"`
 	Passed               types.Bool   `tfsdk:"passed"`
+	RequestBody          types.String `tfsdk:"request_body"`
 	ResultBody           types.String `tfsdk:"result_body"`
 	CABundle             types.String `tfsdk:"ca_bundle"`
 	InsecureTLS          types.Bool   `tfsdk:"insecure_tls"`
@@ -197,8 +203,8 @@ func (r *HttpHealthResource) HealthCheck(ctx context.Context, data *HttpHealthRe
 			return
 		}
 
-		for k, v := range data.Headers.Elements() {
-			headers[k] = []string{v.String()}
+		for k, v := range tmp {
+			headers[k] = []string{v}
 		}
 	}
 
@@ -234,15 +240,18 @@ func (r *HttpHealthResource) HealthCheck(ctx context.Context, data *HttpHealthRe
 		tflog.Debug(ctx, fmt.Sprintf("%s: %s", h, v))
 	}
 
-	result := window.Do(func(successes int) bool {
+	result := window.Do(func(attempt int, successes int) bool {
 		if successes != 0 {
 			tflog.Trace(ctx, fmt.Sprintf("SUCCESS [%d/%d] http %s %s", successes, data.ConsecutiveSuccesses.ValueInt64(), data.Method.ValueString(), endpoint))
+		} else {
+			tflog.Trace(ctx, fmt.Sprintf("ATTEMPT #%d http %s %s", attempt, data.Method.ValueString(), endpoint))
 		}
 
 		httpResponse, err := client.Do(&http.Request{
 			URL:    endpoint,
 			Method: data.Method.ValueString(),
 			Header: headers,
+			Body:   io.NopCloser(strings.NewReader(data.RequestBody.ValueString())),
 		})
 		if err != nil {
 			diag.AddWarning("Error connecting to healthcheck endpoint", fmt.Sprintf("%s", err))

@@ -153,7 +153,7 @@ func (r *LocalCommandResource) RunCommand(ctx context.Context, data *LocalComman
 		ConsecutiveSuccesses: int(data.ConsecutiveSuccesses.ValueInt64()),
 	}
 
-	result := window.Do(func(success int) bool {
+	result := window.Do(func(attempt int, success int) bool {
 		var stdout bytes.Buffer
 		var stderr bytes.Buffer
 
