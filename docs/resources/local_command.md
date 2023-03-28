@@ -20,9 +20,6 @@ resource "checkmate_local_command" "example" {
   # Switch to this directory before running the command
   working_directory = "./scripts"
 
-  # We're willing to try up to 10 times
-  retries = 5
-
   # The overall test should not take longer than 5 seconds
   timeout = 5000
 
@@ -48,8 +45,6 @@ resource "checkmate_local_command" "example" {
 - `consecutive_successes` (Number) Number of consecutive successes required before the check is considered successful overall. Defaults to 1.
 - `create_anyway_on_check_failure` (Boolean) If false, the resource will fail to create if the check does not pass. If true, the resource will be created anyway. Defaults to false.
 - `interval` (Number) Interval in milliseconds between attemps. Default 200
-- `retries` (Number) Max number of times to retry a failure. Exceeding this number will cause the check to fail even if timeout has not expired yet.
- Default 5.
 - `timeout` (Number) Overall timeout in milliseconds for the check before giving up, default 10000
 - `working_directory` (String) Working directory where the command will be run. Defaults to the current working directory
 
