@@ -83,6 +83,7 @@ resource "checkmate_http_health" "example_insecure_tls" {
 - `insecure_tls` (Boolean) Wether or not to completely skip the TLS CA verification. Default false.
 - `interval` (Number) Interval in milliseconds between attemps. Default 200
 - `method` (String) HTTP Method, defaults to GET
+- `request_body` (String) Optional request body to send on each attempt.
 - `request_timeout` (Number) Timeout for an individual request. If exceeded, the attempt will be considered failure and potentially retried. Default 1000
 - `status_code` (String) Status Code to expect. Default 200
 - `timeout` (Number) Overall timeout in milliseconds for the check before giving up. Default 5000
