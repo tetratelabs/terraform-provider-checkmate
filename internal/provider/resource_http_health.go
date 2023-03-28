@@ -59,12 +59,6 @@ func (*HttpHealthResource) Schema(ctx context.Context, req resource.SchemaReques
 				MarkdownDescription: "URL",
 				Required:            true,
 			},
-			"retries": schema.Int64Attribute{
-				MarkdownDescription: "Max number of times to retry a failure. Exceeding this number will cause the check to fail even if timeout has not expired yet.\n Default 5.",
-				Optional:            true,
-				Computed:            true,
-				PlanModifiers:       []planmodifier.Int64{modifiers.DefaultInt64(5)},
-			},
 			"method": schema.StringAttribute{
 				MarkdownDescription: "HTTP Method, defaults to GET",
 				Optional:            true,
@@ -138,7 +132,6 @@ func (*HttpHealthResource) Schema(ctx context.Context, req resource.SchemaReques
 type HttpHealthResourceModel struct {
 	URL                  types.String `tfsdk:"url"`
 	Id                   types.String `tfsdk:"id"`
-	Retries              types.Int64  `tfsdk:"retries"`
 	Method               types.String `tfsdk:"method"`
 	Timeout              types.Int64  `tfsdk:"timeout"`
 	RequestTimeout       types.Int64  `tfsdk:"request_timeout"`
@@ -210,7 +203,6 @@ func (r *HttpHealthResource) HealthCheck(ctx context.Context, data *HttpHealthRe
 	}
 
 	window := helpers.RetryWindow{
-		MaxRetries:           int(data.Retries.ValueInt64()),
 		Timeout:              time.Duration(data.Timeout.ValueInt64()) * time.Millisecond,
 		Interval:             time.Duration(data.Interval.ValueInt64()) * time.Millisecond,
 		ConsecutiveSuccesses: int(data.ConsecutiveSuccesses.ValueInt64()),
@@ -242,11 +234,9 @@ func (r *HttpHealthResource) HealthCheck(ctx context.Context, data *HttpHealthRe
 		tflog.Debug(ctx, fmt.Sprintf("%s: %s", h, v))
 	}
 
-	result := window.Do(func(attempt int, successes int) bool {
+	result := window.Do(func(successes int) bool {
 		if successes != 0 {
 			tflog.Trace(ctx, fmt.Sprintf("SUCCESS [%d/%d] http %s %s", successes, data.ConsecutiveSuccesses.ValueInt64(), data.Method.ValueString(), endpoint))
-		} else {
-			tflog.Trace(ctx, fmt.Sprintf("ATTEMPT [%d/%d] http %s %s", attempt, data.Retries.ValueInt64(), data.Method.ValueString(), endpoint))
 		}
 
 		httpResponse, err := client.Do(&http.Request{
@@ -277,12 +267,6 @@ func (r *HttpHealthResource) HealthCheck(ctx context.Context, data *HttpHealthRe
 		data.Passed = types.BoolValue(true)
 	case helpers.TimeoutExceeded:
 		diag.AddWarning("Timeout exceeded", fmt.Sprintf("Timeout of %d milliseconds exceeded", data.Timeout.ValueInt64()))
-		if !data.IgnoreFailure.ValueBool() {
-			diag.AddError("Check failed", "The check did not pass and create_anyway_on_check_failure is false")
-			return
-		}
-	case helpers.RetriesExceeded:
-		diag.AddWarning("Retries exceeded", fmt.Sprintf("All %d attempts failed", data.Retries.ValueInt64()))
 		if !data.IgnoreFailure.ValueBool() {
 			diag.AddError("Check failed", "The check did not pass and create_anyway_on_check_failure is false")
 			return

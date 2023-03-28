@@ -34,5 +34,5 @@ To generate or update documentation, run `go generate`.
 In order to run the full suite of Acceptance tests, run `make testacc`.
 
 ```shell
-make testacc
+make test
 ```

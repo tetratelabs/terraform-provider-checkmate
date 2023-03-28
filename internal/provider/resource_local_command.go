@@ -62,12 +62,6 @@ func (*LocalCommandResource) Schema(ctx context.Context, req resource.SchemaRequ
 				Computed:            true,
 				PlanModifiers:       []planmodifier.Int64{modifiers.DefaultInt64(5000)},
 			},
-			"retries": schema.Int64Attribute{
-				MarkdownDescription: "Max number of times to retry a failure. Exceeding this number will cause the check to fail even if timeout has not expired yet.\n Default 5.",
-				Optional:            true,
-				Computed:            true,
-				PlanModifiers:       []planmodifier.Int64{modifiers.DefaultInt64(5)},
-			},
 			"interval": schema.Int64Attribute{
 				MarkdownDescription: "Interval in milliseconds between attemps. Default 200",
 				Optional:            true,
@@ -115,7 +109,6 @@ type LocalCommandResourceModel struct {
 	Command              types.String `tfsdk:"command"`
 	Timeout              types.Int64  `tfsdk:"timeout"`
 	CommandTimeout       types.Int64  `tfsdk:"command_timeout"`
-	Retries              types.Int64  `tfsdk:"retries"`
 	Interval             types.Int64  `tfsdk:"interval"`
 	ConsecutiveSuccesses types.Int64  `tfsdk:"consecutive_successes"`
 	WorkDir              types.String `tfsdk:"working_directory"`
@@ -155,13 +148,12 @@ func (r *LocalCommandResource) RunCommand(ctx context.Context, data *LocalComman
 	data.Stderr = types.StringNull()
 
 	window := helpers.RetryWindow{
-		MaxRetries:           int(data.Retries.ValueInt64()),
 		Timeout:              time.Duration(data.Timeout.ValueInt64()) * time.Millisecond,
 		Interval:             time.Duration(data.Interval.ValueInt64()) * time.Millisecond,
 		ConsecutiveSuccesses: int(data.ConsecutiveSuccesses.ValueInt64()),
 	}
 
-	result := window.Do(func(attempt int, success int) bool {
+	result := window.Do(func(success int) bool {
 		var stdout bytes.Buffer
 		var stderr bytes.Buffer
 
@@ -190,12 +182,6 @@ func (r *LocalCommandResource) RunCommand(ctx context.Context, data *LocalComman
 		data.Passed = types.BoolValue(true)
 	case helpers.TimeoutExceeded:
 		diag.AddWarning("Timeout exceeded", fmt.Sprintf("Timeout of %d milliseconds exceeded", data.Timeout.ValueInt64()))
-		if !data.IgnoreFailure.ValueBool() {
-			diag.AddError("Check failed", "The check did not pass and create_anyway_on_check_failure is false")
-			return
-		}
-	case helpers.RetriesExceeded:
-		diag.AddWarning("Retries exceeded", fmt.Sprintf("All %d attempts failed", data.Retries.ValueInt64()))
 		if !data.IgnoreFailure.ValueBool() {
 			diag.AddError("Check failed", "The check did not pass and create_anyway_on_check_failure is false")
 			return
