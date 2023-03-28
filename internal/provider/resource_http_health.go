@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -58,12 +59,6 @@ func (*HttpHealthResource) Schema(ctx context.Context, req resource.SchemaReques
 			"url": schema.StringAttribute{
 				MarkdownDescription: "URL",
 				Required:            true,
-			},
-			"retries": schema.Int64Attribute{
-				MarkdownDescription: "Max number of times to retry a failure. Exceeding this number will cause the check to fail even if timeout has not expired yet.\n Default 5.",
-				Optional:            true,
-				Computed:            true,
-				PlanModifiers:       []planmodifier.Int64{modifiers.DefaultInt64(5)},
 			},
 			"method": schema.StringAttribute{
 				MarkdownDescription: "HTTP Method, defaults to GET",
@@ -111,6 +106,10 @@ func (*HttpHealthResource) Schema(ctx context.Context, req resource.SchemaReques
 				MarkdownDescription: "Identifier",
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
+			"request_body": schema.StringAttribute{
+				MarkdownDescription: "Optional request body to send on each attempt.",
+				Optional:            true,
+			},
 			"result_body": schema.StringAttribute{
 				Computed:            true,
 				MarkdownDescription: "Result body",
@@ -138,7 +137,6 @@ func (*HttpHealthResource) Schema(ctx context.Context, req resource.SchemaReques
 type HttpHealthResourceModel struct {
 	URL                  types.String `tfsdk:"url"`
 	Id                   types.String `tfsdk:"id"`
-	Retries              types.Int64  `tfsdk:"retries"`
 	Method               types.String `tfsdk:"method"`
 	Timeout              types.Int64  `tfsdk:"timeout"`
 	RequestTimeout       types.Int64  `tfsdk:"request_timeout"`
@@ -148,6 +146,7 @@ type HttpHealthResourceModel struct {
 	Headers              types.Map    `tfsdk:"headers"`
 	IgnoreFailure        types.Bool   `tfsdk:"create_anyway_on_check_failure"`
 	Passed               types.Bool   `tfsdk:"passed"`
+	RequestBody          types.String `tfsdk:"request_body"`
 	ResultBody           types.String `tfsdk:"result_body"`
 	CABundle             types.String `tfsdk:"ca_bundle"`
 	InsecureTLS          types.Bool   `tfsdk:"insecure_tls"`
@@ -204,13 +203,13 @@ func (r *HttpHealthResource) HealthCheck(ctx context.Context, data *HttpHealthRe
 			return
 		}
 
-		for k, v := range data.Headers.Elements() {
-			headers[k] = []string{v.String()}
+		for k, v := range tmp {
+			headers[k] = []string{v}
 		}
 	}
 
 	window := helpers.RetryWindow{
-		MaxRetries:           int(data.Retries.ValueInt64()),
+		MaxRetries:           0, // Infinite retries. this check only relies on timeouts to determine overall failure
 		Timeout:              time.Duration(data.Timeout.ValueInt64()) * time.Millisecond,
 		Interval:             time.Duration(data.Interval.ValueInt64()) * time.Millisecond,
 		ConsecutiveSuccesses: int(data.ConsecutiveSuccesses.ValueInt64()),
@@ -246,13 +245,14 @@ func (r *HttpHealthResource) HealthCheck(ctx context.Context, data *HttpHealthRe
 		if successes != 0 {
 			tflog.Trace(ctx, fmt.Sprintf("SUCCESS [%d/%d] http %s %s", successes, data.ConsecutiveSuccesses.ValueInt64(), data.Method.ValueString(), endpoint))
 		} else {
-			tflog.Trace(ctx, fmt.Sprintf("ATTEMPT [%d/%d] http %s %s", attempt, data.Retries.ValueInt64(), data.Method.ValueString(), endpoint))
+			tflog.Trace(ctx, fmt.Sprintf("ATTEMPT #%d http %s %s", attempt, data.Method.ValueString(), endpoint))
 		}
 
 		httpResponse, err := client.Do(&http.Request{
 			URL:    endpoint,
 			Method: data.Method.ValueString(),
 			Header: headers,
+			Body:   io.NopCloser(strings.NewReader(data.RequestBody.ValueString())),
 		})
 		if err != nil {
 			diag.AddWarning("Error connecting to healthcheck endpoint", fmt.Sprintf("%s", err))
@@ -282,11 +282,7 @@ func (r *HttpHealthResource) HealthCheck(ctx context.Context, data *HttpHealthRe
 			return
 		}
 	case helpers.RetriesExceeded:
-		diag.AddWarning("Retries exceeded", fmt.Sprintf("All %d attempts failed", data.Retries.ValueInt64()))
-		if !data.IgnoreFailure.ValueBool() {
-			diag.AddError("Check failed", "The check did not pass and create_anyway_on_check_failure is false")
-			return
-		}
+		diag.AddError("Internal error", "Something went wrong with the retry logic. This shouldn't happen")
 	}
 
 }

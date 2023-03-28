@@ -37,7 +37,8 @@ func (r *RetryWindow) Do(action func(attempt int, succeses int) bool) RetryResul
 	go func() {
 		successCount := 0
 		retries := 0
-		for retries < r.MaxRetries { // short-circuit the failure before timeout expires
+		// The loop is infinite if MaxRetries is 0
+		for r.MaxRetries == 0 || retries < r.MaxRetries {
 			if action(retries, successCount) {
 				successCount++
 				retries = 0 // reset retries
@@ -52,7 +53,6 @@ func (r *RetryWindow) Do(action func(attempt int, succeses int) bool) RetryResul
 			time.Sleep(r.Interval)
 		}
 
-		lastTry <- true
 	}()
 
 	select {
