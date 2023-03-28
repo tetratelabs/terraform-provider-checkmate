@@ -209,7 +209,6 @@ func (r *HttpHealthResource) HealthCheck(ctx context.Context, data *HttpHealthRe
 	}
 
 	window := helpers.RetryWindow{
-		MaxRetries:           0, // Infinite retries. this check only relies on timeouts to determine overall failure
 		Timeout:              time.Duration(data.Timeout.ValueInt64()) * time.Millisecond,
 		Interval:             time.Duration(data.Interval.ValueInt64()) * time.Millisecond,
 		ConsecutiveSuccesses: int(data.ConsecutiveSuccesses.ValueInt64()),
@@ -281,8 +280,6 @@ func (r *HttpHealthResource) HealthCheck(ctx context.Context, data *HttpHealthRe
 			diag.AddError("Check failed", "The check did not pass and create_anyway_on_check_failure is false")
 			return
 		}
-	case helpers.RetriesExceeded:
-		diag.AddError("Internal error", "Something went wrong with the retry logic. This shouldn't happen")
 	}
 
 }

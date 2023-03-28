@@ -17,7 +17,6 @@ package helpers
 import "time"
 
 type RetryWindow struct {
-	MaxRetries           int
 	Timeout              time.Duration
 	Interval             time.Duration
 	ConsecutiveSuccesses int
@@ -27,28 +26,25 @@ type RetryResult int
 
 const (
 	Success RetryResult = iota
-	RetriesExceeded
 	TimeoutExceeded
 )
 
-func (r *RetryWindow) Do(action func(attempt int, succeses int) bool) RetryResult {
+func (r *RetryWindow) Do(action func(attempt int, successes int) bool) RetryResult {
 	success := make(chan bool)
-	lastTry := make(chan bool)
 	go func() {
+		attempt := 0
 		successCount := 0
-		retries := 0
-		// The loop is infinite if MaxRetries is 0
-		for r.MaxRetries == 0 || retries < r.MaxRetries {
-			if action(retries, successCount) {
+		// run a while true loop, exiting when the timeout expires
+		for {
+			attempt++
+			if action(attempt, successCount) {
 				successCount++
-				retries = 0 // reset retries
 				if successCount >= r.ConsecutiveSuccesses {
 					success <- true
 					return
 				}
 			} else {
 				successCount = 0
-				retries++
 			}
 			time.Sleep(r.Interval)
 		}
@@ -60,7 +56,5 @@ func (r *RetryWindow) Do(action func(attempt int, succeses int) bool) RetryResul
 		return Success
 	case <-time.After(r.Timeout):
 		return TimeoutExceeded
-	case <-lastTry:
-		return RetriesExceeded
 	}
 }

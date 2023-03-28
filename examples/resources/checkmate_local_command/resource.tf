@@ -5,9 +5,6 @@ resource "checkmate_local_command" "example" {
   # Switch to this directory before running the command
   working_directory = "./scripts"
 
-  # We're willing to try up to 10 times
-  retries = 5
-
   # The overall test should not take longer than 5 seconds
   timeout = 5000
 

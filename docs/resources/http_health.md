@@ -17,9 +17,6 @@ resource "checkmate_http_health" "example" {
   # This is the url of the endpoint we want to check
   url = "http://example.com"
 
-  # We're willing to try up to 10 times
-  retries = 10
-
   # Will perform an HTTP GET request
   method = "GET"
 
@@ -43,7 +40,6 @@ resource "checkmate_http_health" "example" {
 
 resource "checkmate_http_health" "example_ca_bundle" {
   url                   = "https://untrusted-root.badssl.com/"
-  retries               = 10
   method                = "GET"
   interval              = 1
   status_code           = 200
@@ -53,7 +49,6 @@ resource "checkmate_http_health" "example_ca_bundle" {
 
 resource "checkmate_http_health" "example_no_ca_bundle" {
   url                   = "https://httpbin.org/status/200"
-  retries               = 10
   request_timeout       = 1000
   method                = "GET"
   interval              = 1
@@ -63,7 +58,6 @@ resource "checkmate_http_health" "example_no_ca_bundle" {
 
 resource "checkmate_http_health" "example_insecure_tls" {
   url                   = "https://self-signed.badssl.com/"
-  retries               = 10
   request_timeout       = 1000
   method                = "GET"
   interval              = 1
@@ -90,8 +84,6 @@ resource "checkmate_http_health" "example_insecure_tls" {
 - `interval` (Number) Interval in milliseconds between attemps. Default 200
 - `method` (String) HTTP Method, defaults to GET
 - `request_timeout` (Number) Timeout for an individual request. If exceeded, the attempt will be considered failure and potentially retried. Default 1000
-- `retries` (Number) Max number of times to retry a failure. Exceeding this number will cause the check to fail even if timeout has not expired yet.
- Default 5.
 - `status_code` (String) Status Code to expect. Default 200
 - `timeout` (Number) Overall timeout in milliseconds for the check before giving up. Default 5000
 
