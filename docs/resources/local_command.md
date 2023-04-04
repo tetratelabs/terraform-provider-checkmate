@@ -45,6 +45,7 @@ resource "checkmate_local_command" "example" {
 - `consecutive_successes` (Number) Number of consecutive successes required before the check is considered successful overall. Defaults to 1.
 - `create_anyway_on_check_failure` (Boolean) If false, the resource will fail to create if the check does not pass. If true, the resource will be created anyway. Defaults to false.
 - `interval` (Number) Interval in milliseconds between attemps. Default 200
+- `keepers` (Map of String) Arbitrary map of string values that when changed will cause the check to run again.
 - `timeout` (Number) Overall timeout in milliseconds for the check before giving up, default 10000
 - `working_directory` (String) Working directory where the command will be run. Defaults to the current working directory
 

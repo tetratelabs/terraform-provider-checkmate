@@ -101,6 +101,11 @@ func (*LocalCommandResource) Schema(ctx context.Context, req resource.SchemaRequ
 				MarkdownDescription: "Identifier",
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
+			"keepers": schema.MapAttribute{
+				ElementType:         types.StringType,
+				MarkdownDescription: "Arbitrary map of string values that when changed will cause the check to run again.",
+				Optional:            true,
+			},
 		}}
 }
 
@@ -116,6 +121,7 @@ type LocalCommandResourceModel struct {
 	Stderr               types.String `tfsdk:"stderr"`
 	IgnoreFailure        types.Bool   `tfsdk:"create_anyway_on_check_failure"`
 	Passed               types.Bool   `tfsdk:"passed"`
+	Keepers              types.Map    `tfsdk:"keepers"`
 }
 
 // ImportState implements resource.ResourceWithImportState
