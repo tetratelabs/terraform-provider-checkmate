@@ -130,6 +130,11 @@ func (*HttpHealthResource) Schema(ctx context.Context, req resource.SchemaReques
 				Optional:            true,
 				MarkdownDescription: "Wether or not to completely skip the TLS CA verification. Default false.",
 			},
+			"keepers": schema.MapAttribute{
+				ElementType:         types.StringType,
+				MarkdownDescription: "Arbitrary map of string values that when changed will cause the healthcheck to run again.",
+				Optional:            true,
+			},
 		},
 	}
 }
@@ -150,6 +155,7 @@ type HttpHealthResourceModel struct {
 	ResultBody           types.String `tfsdk:"result_body"`
 	CABundle             types.String `tfsdk:"ca_bundle"`
 	InsecureTLS          types.Bool   `tfsdk:"insecure_tls"`
+	Keepers              types.Map    `tfsdk:"keepers"`
 }
 
 func (r *HttpHealthResource) Metadata(ctx context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
