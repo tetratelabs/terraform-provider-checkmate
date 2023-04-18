@@ -27,13 +27,13 @@ func TestAccTCPEchoResource(t *testing.T) {
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
 			{
-				Config: testAccTCPEchoResourceConfig("test_success", "true", false),
+				Config: testAccTCPEchoResourceConfig("test_success", "tcpbin.com", 4242, "foobar", "foobar", false),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttr("checkmate_tcp_echo.test_success", "passed", "true"),
 				),
 			},
 			{
-				Config: testAccTCPEchoResourceConfig("test_failure", "false", true),
+				Config: testAccTCPEchoResourceConfig("test_failure", "foo.bar", 1234, "foobar", "foobar", true),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttr("checkmate_tcp_echo.test_failure", "passed", "false"),
 				),
@@ -42,11 +42,14 @@ func TestAccTCPEchoResource(t *testing.T) {
 	})
 }
 
-func testAccTCPEchoResourceConfig(name string, command string, ignore_failure bool) string {
+func testAccTCPEchoResourceConfig(name, host string, port int, message, expected_message string, ignore_failure bool) string {
 	return fmt.Sprintf(`
-resource "checkmate_tcp_echo" %[1]q {
-	command = %[2]q
-	create_anyway_on_check_failure = %[3]t
-}`, name, command, ignore_failure)
+resource "checkmate_tcp_echo" %q {
+	host = %q
+	port = %d
+	message = %q
+	expected_message = %q
+	create_anyway_on_check_failure = %t
+}`, name, host, port, message, expected_message, ignore_failure)
 
 }
