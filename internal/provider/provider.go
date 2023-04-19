@@ -56,6 +56,7 @@ func (p *CheckmateProvider) Resources(ctx context.Context) []func() resource.Res
 	return []func() resource.Resource{
 		NewHttpHealthResource,
 		NewLocalCommandResource,
+		NewTCPEchoResource,
 	}
 }
 

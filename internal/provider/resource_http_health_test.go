@@ -24,6 +24,7 @@ import (
 
 func TestAccHttpHealthResource(t *testing.T) {
 	// testUrl := "http://example.com"
+	httpBinTimeout := 60000 // 60s
 	testUrl := "https://httpbin.org/status/200"
 
 	resource.Test(t, resource.TestCase{
@@ -32,19 +33,19 @@ func TestAccHttpHealthResource(t *testing.T) {
 		Steps: []resource.TestStep{
 			// Create and Read testing
 			{
-				Config: testAccHttpHealthResourceConfig("test", testUrl),
+				Config: testAccHttpHealthResourceConfig("test", testUrl, httpBinTimeout),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttr("checkmate_http_health.test", "url", testUrl),
 				),
 			},
 			{
-				Config: testAccHttpHealthResourceConfig("test_headers", "https://httpbin.org/headers"),
+				Config: testAccHttpHealthResourceConfig("test_headers", "https://httpbin.org/headers", httpBinTimeout),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrWith("checkmate_http_health.test_headers", "result_body", checkHeader("Hello", "world")),
 				),
 			},
 			{
-				Config: testAccHttpHealthResourceConfigWithBody("test_post", "https://httpbin.org/post", "hello"),
+				Config: testAccHttpHealthResourceConfigWithBody("test_post", "https://httpbin.org/post", "hello", httpBinTimeout),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrWith("checkmate_http_health.test_post", "result_body", checkResponse("hello")),
 				),
@@ -67,7 +68,7 @@ func TestAccHttpHealthResource(t *testing.T) {
 	})
 }
 
-func testAccHttpHealthResourceConfig(name string, url string) string {
+func testAccHttpHealthResourceConfig(name string, url string, timeout int) string {
 	return fmt.Sprintf(`
 resource "checkmate_http_health" %[1]q {
   url = %[2]q
@@ -75,10 +76,11 @@ resource "checkmate_http_health" %[1]q {
   headers = {
 	hello = "world"
   }
+  timeout = %[3]d
 }
-`, name, url)
+`, name, url, timeout)
 }
-func testAccHttpHealthResourceConfigWithBody(name string, url string, body string) string {
+func testAccHttpHealthResourceConfigWithBody(name string, url string, body string, timeout int) string {
 	return fmt.Sprintf(`
 resource "checkmate_http_health" %[1]q {
   url = %[2]q
@@ -88,8 +90,9 @@ resource "checkmate_http_health" %[1]q {
 	"Content-Type" = "application/text"
   }
   request_body = %[3]q
+  timeout = %[4]d
 }
-`, name, url, body)
+`, name, url, body, timeout)
 
 }
 
