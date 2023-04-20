@@ -1,6 +1,6 @@
 resource "checkmate_local_command" "example" {
   # Run this command in a shell
-  command = "python fancy_script.py"
+  command = "python $CHECKMATE_FILEPATH"
 
   # Switch to this directory before running the command
   working_directory = "./scripts"
@@ -13,5 +13,13 @@ resource "checkmate_local_command" "example" {
 
   # We want 2 successes in a row
   consecutive_successes = 1
+
+  # Create the script file before running the attempts
+  create_file {
+    name            = "fancy_script.py"
+    contents        = "print('hello world')"
+    use_working_dir = true
+  }
+
 
 }

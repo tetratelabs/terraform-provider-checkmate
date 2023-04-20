@@ -81,8 +81,13 @@ func (*LocalCommandResource) Schema(ctx context.Context, req resource.SchemaRequ
 				Computed:            true,
 				PlanModifiers:       []planmodifier.String{modifiers.DefaultString(".")},
 			},
-			"create_file_from_contents": schema.SingleNestedAttribute{
-				MarkdownDescription: "Ensure a file exists with ",
+			"env": schema.MapAttribute{
+				ElementType:         types.StringType,
+				MarkdownDescription: "Map of environment variables to apply to the command",
+				Optional:            true,
+			},
+			"create_file": schema.SingleNestedAttribute{
+				MarkdownDescription: "Ensure a file exists with the following contents. The path to this file will be available in the env var CHECKMATE_FILEPATH",
 				Optional:            true,
 				Attributes: map[string]schema.Attribute{
 					"contents": schema.StringAttribute{
@@ -149,7 +154,8 @@ type LocalCommandResourceModel struct {
 	WorkDir              types.String     `tfsdk:"working_directory"`
 	Stdout               types.String     `tfsdk:"stdout"`
 	Stderr               types.String     `tfsdk:"stderr"`
-	CreateFile           *CreateFileModel `tfsdk:"create_file_from_contents"`
+	Env                  types.Map        `tfsdk:"env"`
+	CreateFile           *CreateFileModel `tfsdk:"create_file"`
 	IgnoreFailure        types.Bool       `tfsdk:"create_anyway_on_check_failure"`
 	Passed               types.Bool       `tfsdk:"passed"`
 	Keepers              types.Map        `tfsdk:"keepers"`
@@ -195,6 +201,24 @@ func (r *LocalCommandResource) RunCommand(ctx context.Context, data *LocalComman
 		ConsecutiveSuccesses: int(data.ConsecutiveSuccesses.ValueInt64()),
 	}
 
+	envMap := make(map[string]string)
+	if !data.Env.IsNull() {
+		diag.Append(data.Env.ElementsAs(ctx, &envMap, false)...)
+		if diag.HasError() {
+			return
+		}
+
+	}
+
+	if data.CreateFile != nil {
+		envMap["CHECKMATE_FILEPATH"] = data.CreateFile.Path.ValueString()
+	}
+
+	env := make([]string, 0, len(envMap))
+	for k, v := range envMap {
+		env = append(env, fmt.Sprintf("%s=%s", k, v))
+	}
+
 	result := window.Do(func(attempt int, success int) bool {
 		var stdout bytes.Buffer
 		var stderr bytes.Buffer
@@ -206,6 +230,7 @@ func (r *LocalCommandResource) RunCommand(ctx context.Context, data *LocalComman
 		cmd.Dir = data.WorkDir.ValueString()
 		cmd.Stdout = &stdout
 		cmd.Stderr = &stderr
+		cmd.Env = env
 
 		err := cmd.Run()
 		if err != nil {
