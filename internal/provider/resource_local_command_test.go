@@ -38,6 +38,13 @@ func TestAccLocalCommandResource(t *testing.T) {
 					resource.TestCheckResourceAttr("checkmate_local_command.test_failure", "passed", "false"),
 				),
 			},
+			{
+				Config: testAccLocalCommandResourceCreateFileConfig("test_file"),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("checkmate_local_command.test_file", "passed", "true"),
+					resource.TestCheckResourceAttr("checkmate_local_command.test_file", "stdout", "hello world"),
+				),
+			},
 		},
 	})
 }
@@ -46,7 +53,20 @@ func testAccLocalCommandResourceConfig(name string, command string, ignore_failu
 	return fmt.Sprintf(`
 resource "checkmate_local_command" %[1]q {
 	command = %[2]q
+	timeout = 1000
 	create_anyway_on_check_failure = %[3]t
 }`, name, command, ignore_failure)
 
+}
+
+func testAccLocalCommandResourceCreateFileConfig(name string) string {
+	return fmt.Sprintf(`
+resource "checkmate_local_command" %[1]q {
+	command = "cat $CHECKMATE_FILEPATH"
+	timeout = 1000
+	create_file = {
+		name = "testing_create_file"
+		contents = "hello world"
+	}
+}`, name)
 }

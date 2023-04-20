@@ -18,12 +18,13 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
-	"github.com/hashicorp/terraform-plugin-framework/path"
+	tfpath "github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
@@ -80,6 +81,33 @@ func (*LocalCommandResource) Schema(ctx context.Context, req resource.SchemaRequ
 				Computed:            true,
 				PlanModifiers:       []planmodifier.String{modifiers.DefaultString(".")},
 			},
+			"env": schema.MapAttribute{
+				ElementType:         types.StringType,
+				MarkdownDescription: "Map of environment variables to apply to the command",
+				Optional:            true,
+			},
+			"create_file": schema.SingleNestedAttribute{
+				MarkdownDescription: "Ensure a file exists with the following contents. The path to this file will be available in the env var CHECKMATE_FILEPATH",
+				Optional:            true,
+				Attributes: map[string]schema.Attribute{
+					"contents": schema.StringAttribute{
+						MarkdownDescription: "Contents of the file to create",
+						Required:            true,
+					},
+					"name": schema.StringAttribute{
+						MarkdownDescription: "Name of the created file.",
+						Required:            true,
+					},
+					"path": schema.StringAttribute{
+						MarkdownDescription: "Path to the file that was created",
+						Computed:            true,
+					},
+					"use_working_dir": schema.BoolAttribute{
+						MarkdownDescription: "If true, will use the working directory instead of a temporary directory. Defaults to false.",
+						Optional:            true,
+					},
+				},
+			},
 			"stdout": schema.StringAttribute{
 				MarkdownDescription: "Standard output of the command",
 				Computed:            true,
@@ -109,24 +137,33 @@ func (*LocalCommandResource) Schema(ctx context.Context, req resource.SchemaRequ
 		}}
 }
 
+type CreateFileModel struct {
+	Contents            types.String `tfsdk:"contents"`
+	Path                types.String `tfsdk:"path"`
+	UseWorkingDirectory types.Bool   `tfsdk:"use_working_dir"`
+	Name                types.String `tfsdk:"name"`
+}
+
 type LocalCommandResourceModel struct {
-	Id                   types.String `tfsdk:"id"`
-	Command              types.String `tfsdk:"command"`
-	Timeout              types.Int64  `tfsdk:"timeout"`
-	CommandTimeout       types.Int64  `tfsdk:"command_timeout"`
-	Interval             types.Int64  `tfsdk:"interval"`
-	ConsecutiveSuccesses types.Int64  `tfsdk:"consecutive_successes"`
-	WorkDir              types.String `tfsdk:"working_directory"`
-	Stdout               types.String `tfsdk:"stdout"`
-	Stderr               types.String `tfsdk:"stderr"`
-	IgnoreFailure        types.Bool   `tfsdk:"create_anyway_on_check_failure"`
-	Passed               types.Bool   `tfsdk:"passed"`
-	Keepers              types.Map    `tfsdk:"keepers"`
+	Id                   types.String     `tfsdk:"id"`
+	Command              types.String     `tfsdk:"command"`
+	Timeout              types.Int64      `tfsdk:"timeout"`
+	CommandTimeout       types.Int64      `tfsdk:"command_timeout"`
+	Interval             types.Int64      `tfsdk:"interval"`
+	ConsecutiveSuccesses types.Int64      `tfsdk:"consecutive_successes"`
+	WorkDir              types.String     `tfsdk:"working_directory"`
+	Stdout               types.String     `tfsdk:"stdout"`
+	Stderr               types.String     `tfsdk:"stderr"`
+	Env                  types.Map        `tfsdk:"env"`
+	CreateFile           *CreateFileModel `tfsdk:"create_file"`
+	IgnoreFailure        types.Bool       `tfsdk:"create_anyway_on_check_failure"`
+	Passed               types.Bool       `tfsdk:"passed"`
+	Keepers              types.Map        `tfsdk:"keepers"`
 }
 
 // ImportState implements resource.ResourceWithImportState
 func (*LocalCommandResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
-	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
+	resource.ImportStatePassthroughID(ctx, tfpath.Root("id"), req, resp)
 }
 
 // Create implements resource.Resource
@@ -139,6 +176,11 @@ func (r *LocalCommandResource) Create(ctx context.Context, req resource.CreateRe
 	}
 
 	data.Id = types.StringValue(uuid.NewString())
+
+	r.EnsureFile(ctx, &data, &resp.Diagnostics)
+	if resp.Diagnostics.HasError() {
+		return
+	}
 
 	r.RunCommand(ctx, &data, &resp.Diagnostics)
 	if resp.Diagnostics.HasError() {
@@ -159,6 +201,24 @@ func (r *LocalCommandResource) RunCommand(ctx context.Context, data *LocalComman
 		ConsecutiveSuccesses: int(data.ConsecutiveSuccesses.ValueInt64()),
 	}
 
+	envMap := make(map[string]string)
+	if !data.Env.IsNull() {
+		diag.Append(data.Env.ElementsAs(ctx, &envMap, false)...)
+		if diag.HasError() {
+			return
+		}
+
+	}
+
+	if data.CreateFile != nil {
+		envMap["CHECKMATE_FILEPATH"] = data.CreateFile.Path.ValueString()
+	}
+
+	env := make([]string, 0, len(envMap))
+	for k, v := range envMap {
+		env = append(env, fmt.Sprintf("%s=%s", k, v))
+	}
+
 	result := window.Do(func(attempt int, success int) bool {
 		var stdout bytes.Buffer
 		var stderr bytes.Buffer
@@ -170,6 +230,7 @@ func (r *LocalCommandResource) RunCommand(ctx context.Context, data *LocalComman
 		cmd.Dir = data.WorkDir.ValueString()
 		cmd.Stdout = &stdout
 		cmd.Stderr = &stderr
+		cmd.Env = env
 
 		err := cmd.Run()
 		if err != nil {
@@ -232,6 +293,11 @@ func (r *LocalCommandResource) Update(ctx context.Context, req resource.UpdateRe
 		return
 	}
 
+	r.EnsureFile(ctx, data, &resp.Diagnostics)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
 	r.RunCommand(ctx, data, &resp.Diagnostics)
 	if resp.Diagnostics.HasError() {
 		return
@@ -242,4 +308,35 @@ func (r *LocalCommandResource) Update(ctx context.Context, req resource.UpdateRe
 
 func NewLocalCommandResource() resource.Resource {
 	return &LocalCommandResource{}
+}
+
+func (r *LocalCommandResource) EnsureFile(ctx context.Context, data *LocalCommandResourceModel, diag *diag.Diagnostics) {
+	cf := data.CreateFile
+	if cf == nil {
+		return
+	}
+
+	var file *os.File
+	var err error
+	if cf.UseWorkingDirectory.ValueBool() {
+		file, err = os.CreateTemp(data.WorkDir.ValueString(), cf.Name.ValueString())
+		if err != nil {
+			diag.AddError("Error creating file", fmt.Sprintf("%s", err))
+			return
+		}
+	} else {
+		file, err = os.CreateTemp("", cf.Name.ValueString())
+		if err != nil {
+			diag.AddError("Error creating file", fmt.Sprintf("%s", err))
+			return
+		}
+	}
+
+	_, err = file.WriteString(cf.Contents.ValueString())
+	if err != nil {
+		diag.AddError("Error writing file", fmt.Sprintf("%s", err))
+		return
+	}
+
+	cf.Path = types.StringValue(file.Name())
 }
