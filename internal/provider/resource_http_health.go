@@ -85,7 +85,7 @@ func (*HttpHealthResource) Schema(ctx context.Context, req resource.SchemaReques
 				PlanModifiers:       []planmodifier.Int64{modifiers.DefaultInt64(200)},
 			},
 			"status_code": schema.StringAttribute{
-				MarkdownDescription: "Status Code to expect. Default 200",
+				MarkdownDescription: "Status Code to expect. Can be a comma seperated list of ranges like '100-200,500'. Default 200",
 				Optional:            true,
 				Computed:            true,
 				PlanModifiers:       []planmodifier.String{modifiers.DefaultString("200")},
@@ -190,15 +190,12 @@ func (r *HttpHealthResource) HealthCheck(ctx context.Context, data *HttpHealthRe
 	}
 
 	var checkCode func(int) bool
-	if data.StatusCode.IsNull() {
-		checkCode = func(c int) bool { return c < 400 }
-	} else {
-		v, err := strconv.Atoi(data.StatusCode.ValueString())
-		if err != nil {
-			diag.AddError("Error", fmt.Sprintf("Unable to parse status code pattern %s", err))
-		}
-		checkCode = func(c int) bool { return c == v }
+	// check the pattern once
+	checkStatusCode(data.StatusCode.ValueString(), 0, diag)
+	if diag.HasError() {
+		return
 	}
+	checkCode = func(c int) bool { return checkStatusCode(data.StatusCode.ValueString(), c, diag) }
 
 	// normalize headers
 	headers := make(map[string][]string)
@@ -260,19 +257,25 @@ func (r *HttpHealthResource) HealthCheck(ctx context.Context, data *HttpHealthRe
 			Body:   io.NopCloser(strings.NewReader(data.RequestBody.ValueString())),
 		})
 		if err != nil {
-			diag.AddWarning("Error connecting to healthcheck endpoint", fmt.Sprintf("%s", err))
+			tflog.Trace(ctx, fmt.Sprintf("CONNECTION FAILURE %v", err))
+			diag.AddWarning("Error connecting to healthcheck endpoint", fmt.Sprintf("%v", err))
 			return false
 		}
 
 		success := checkCode(httpResponse.StatusCode)
 		if success {
+			tflog.Trace(ctx, fmt.Sprintf("SUCCESS CODE %d", httpResponse.StatusCode))
 			body, err := io.ReadAll(httpResponse.Body)
 			if err != nil {
+				tflog.Trace(ctx, fmt.Sprintf("ERROR READING BODY %v", err))
 				diag.AddWarning("Error reading response body", fmt.Sprintf("%s", err))
 				data.ResultBody = types.StringValue("")
 			} else {
+				tflog.Trace(ctx, fmt.Sprintf("READ %d BYTES", len(body)))
 				data.ResultBody = types.StringValue(string(body))
 			}
+		} else {
+			tflog.Trace(ctx, fmt.Sprintf("FAILURE CODE %d", httpResponse.StatusCode))
 		}
 		return success
 	})
@@ -283,7 +286,7 @@ func (r *HttpHealthResource) HealthCheck(ctx context.Context, data *HttpHealthRe
 	case helpers.TimeoutExceeded:
 		diag.AddWarning("Timeout exceeded", fmt.Sprintf("Timeout of %d milliseconds exceeded", data.Timeout.ValueInt64()))
 		if !data.IgnoreFailure.ValueBool() {
-			diag.AddError("Check failed", "The check did not pass and create_anyway_on_check_failure is false")
+			diag.AddError("Check failed", "The check did not pass within the timeout and create_anyway_on_check_failure is false")
 			return
 		}
 	}
@@ -323,4 +326,43 @@ func (r *HttpHealthResource) Delete(ctx context.Context, req resource.DeleteRequ
 
 func (r *HttpHealthResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
 	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
+}
+
+func checkStatusCode(pattern string, code int, diag *diag.Diagnostics) bool {
+	ranges := strings.Split(pattern, ",")
+	for _, r := range ranges {
+		bounds := strings.Split(r, "-")
+		if len(bounds) == 2 {
+			left, err := strconv.Atoi(bounds[0])
+			if err != nil {
+				diag.AddError("Bad status code pattern", fmt.Sprintf("Can't convert %s to integer. %s", bounds[0], err))
+				return false
+			}
+			right, err := strconv.Atoi(bounds[1])
+			if err != nil {
+				diag.AddError("Bad status code pattern", fmt.Sprintf("Can't convert %s to integer. %s", bounds[1], err))
+				return false
+			}
+			if left > right {
+				diag.AddError("Bad status code pattern", fmt.Sprintf("Left bound %d is greater than right bound %d", left, right))
+				return false
+			}
+			if left <= code && right >= code {
+				return true
+			}
+		} else if len(bounds) == 1 {
+			val, err := strconv.Atoi(bounds[0])
+			if err != nil {
+				diag.AddError("Bad status code pattern", fmt.Sprintf("Can't convert %s to integer. %s", bounds[0], err))
+				return false
+			}
+			if val == code {
+				return true
+			}
+		} else {
+			diag.AddError("Bad status code pattern", "Too many dashes in range pattern")
+			return false
+		}
+	}
+	return false
 }

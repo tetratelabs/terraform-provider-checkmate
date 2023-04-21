@@ -86,7 +86,7 @@ resource "checkmate_http_health" "example_insecure_tls" {
 - `method` (String) HTTP Method, defaults to GET
 - `request_body` (String) Optional request body to send on each attempt.
 - `request_timeout` (Number) Timeout for an individual request. If exceeded, the attempt will be considered failure and potentially retried. Default 1000
-- `status_code` (String) Status Code to expect. Default 200
+- `status_code` (String) Status Code to expect. Can be a comma seperated list of ranges like '100-200,500'. Default 200
 - `timeout` (Number) Overall timeout in milliseconds for the check before giving up. Default 5000
 
 ### Read-Only

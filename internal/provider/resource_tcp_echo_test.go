@@ -48,6 +48,7 @@ resource "checkmate_tcp_echo" %q {
 	host = %q
 	port = %d
 	message = %q
+	timeout = 1000
 	expected_message = %q
 	create_anyway_on_check_failure = %t
 }`, name, host, port, message, expected_message, ignore_failure)
