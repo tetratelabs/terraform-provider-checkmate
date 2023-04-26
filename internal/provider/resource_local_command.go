@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"time"
 
 	"github.com/google/uuid"
@@ -83,7 +84,7 @@ func (*LocalCommandResource) Schema(ctx context.Context, req resource.SchemaRequ
 			},
 			"env": schema.MapAttribute{
 				ElementType:         types.StringType,
-				MarkdownDescription: "Map of environment variables to apply to the command",
+				MarkdownDescription: "Map of environment variables to apply to the command. Inherits the parent environment",
 				Optional:            true,
 			},
 			"create_file": schema.SingleNestedAttribute{
@@ -104,6 +105,10 @@ func (*LocalCommandResource) Schema(ctx context.Context, req resource.SchemaRequ
 					},
 					"use_working_dir": schema.BoolAttribute{
 						MarkdownDescription: "If true, will use the working directory instead of a temporary directory. Defaults to false.",
+						Optional:            true,
+					},
+					"create_directory": schema.BoolAttribute{
+						MarkdownDescription: "Create the target directory if it doesn't exist. Defaults to false.",
 						Optional:            true,
 					},
 				},
@@ -142,6 +147,7 @@ type CreateFileModel struct {
 	Path                types.String `tfsdk:"path"`
 	UseWorkingDirectory types.Bool   `tfsdk:"use_working_dir"`
 	Name                types.String `tfsdk:"name"`
+	CreateDirectory     types.Bool   `tfsdk:"create_directory"`
 }
 
 type LocalCommandResourceModel struct {
@@ -211,7 +217,13 @@ func (r *LocalCommandResource) RunCommand(ctx context.Context, data *LocalComman
 	}
 
 	if data.CreateFile != nil {
-		envMap["CHECKMATE_FILEPATH"] = data.CreateFile.Path.ValueString()
+		abs, err := filepath.Abs(data.CreateFile.Path.ValueString())
+		if err != nil {
+			tflog.Error(ctx, fmt.Sprintf("Can't determine the absolute path of the file we created at %q error=%v", data.CreateFile.Path.ValueString(), err))
+			diag.AddError("Can't get path to file", fmt.Sprintf("Can't determine the absolute path of the file we created at %q error=%v", data.CreateFile.Path.ValueString(), err))
+			return
+		}
+		envMap["CHECKMATE_FILEPATH"] = abs
 	}
 
 	env := make([]string, 0, len(envMap))
@@ -219,7 +231,8 @@ func (r *LocalCommandResource) RunCommand(ctx context.Context, data *LocalComman
 		env = append(env, fmt.Sprintf("%s=%s", k, v))
 	}
 
-	result := window.Do(func(attempt int, success int) bool {
+	tflog.Debug(ctx, fmt.Sprintf("Command string: sh -c %s", data.Command.ValueString()))
+	result := window.Do(func(attempt int, successes int) bool {
 		var stdout bytes.Buffer
 		var stderr bytes.Buffer
 
@@ -230,13 +243,25 @@ func (r *LocalCommandResource) RunCommand(ctx context.Context, data *LocalComman
 		cmd.Dir = data.WorkDir.ValueString()
 		cmd.Stdout = &stdout
 		cmd.Stderr = &stderr
-		cmd.Env = env
+		cmd.Env = append(os.Environ(), env...)
 
-		err := cmd.Run()
+		err := cmd.Start()
 		if err != nil {
-			diag.AddWarning("Error running command", fmt.Sprintf("%s", err))
+			tflog.Trace(ctx, fmt.Sprintf("ATTEMPT #%d error starting command", attempt))
+			tflog.Error(ctx, fmt.Sprintf("Error starting command %v", err))
+			diag.AddWarning("Error starting command", fmt.Sprintf("%s", err))
 			return false
 		}
+		err = cmd.Wait()
+		if err != nil {
+			tflog.Trace(ctx, fmt.Sprintf("ATTEMPT #%d exit_code=%d", attempt, err.(*exec.ExitError).ExitCode()))
+			data.Stdout = types.StringValue(stdout.String())
+			data.Stderr = types.StringValue(stderr.String())
+			tflog.Debug(ctx, fmt.Sprintf("Command stdout: %s", stdout.String()))
+			tflog.Debug(ctx, fmt.Sprintf("Command stdout: %s", stderr.String()))
+			return false
+		}
+		tflog.Trace(ctx, fmt.Sprintf("SUCCESS [%d/%d]", successes, data.ConsecutiveSuccesses.ValueInt64()))
 		data.Stdout = types.StringValue(stdout.String())
 		data.Stderr = types.StringValue(stderr.String())
 		tflog.Debug(ctx, fmt.Sprintf("Command stdout: %s", stdout.String()))
@@ -319,6 +344,15 @@ func (r *LocalCommandResource) EnsureFile(ctx context.Context, data *LocalComman
 	var file *os.File
 	var err error
 	if cf.UseWorkingDirectory.ValueBool() {
+		if cf.CreateDirectory.ValueBool() {
+			dir := filepath.Join(data.WorkDir.ValueString(), filepath.Dir(cf.Name.ValueString()))
+			err = os.MkdirAll(dir, 0750)
+			if err != nil {
+				diag.AddError("Error creating directory", fmt.Sprintf("Error creating directory %q. %v", dir, err))
+				return
+			}
+
+		}
 		file, err = os.CreateTemp(data.WorkDir.ValueString(), cf.Name.ValueString())
 		if err != nil {
 			diag.AddError("Error creating file", fmt.Sprintf("%s", err))

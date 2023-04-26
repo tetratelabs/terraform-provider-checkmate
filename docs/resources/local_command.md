@@ -15,7 +15,7 @@ Local Command
 ```terraform
 resource "checkmate_local_command" "example" {
   # Run this command in a shell
-  command = "python $CHECKMATE_FILEPATH"
+  command = "python3 $CHECKMATE_FILEPATH"
 
   # Switch to this directory before running the command
   working_directory = "./scripts"
@@ -27,16 +27,25 @@ resource "checkmate_local_command" "example" {
   interval = 100
 
   # We want 2 successes in a row
-  consecutive_successes = 1
+  consecutive_successes = 2
 
   # Create the script file before running the attempts
-  create_file {
-    name            = "fancy_script.py"
-    contents        = "print('hello world')"
-    use_working_dir = true
+  create_file = {
+    name             = "fancy_script.py"
+    contents         = "print('hello world')"
+    use_working_dir  = true
+    create_directory = true
   }
 
+  create_anyway_on_check_failure = false
+}
 
+output "stdout" {
+  value = checkmate_local_command.example.stdout
+}
+
+output "stderr" {
+  value = checkmate_local_command.example.stderr
 }
 ```
 
@@ -53,7 +62,7 @@ resource "checkmate_local_command" "example" {
 - `consecutive_successes` (Number) Number of consecutive successes required before the check is considered successful overall. Defaults to 1.
 - `create_anyway_on_check_failure` (Boolean) If false, the resource will fail to create if the check does not pass. If true, the resource will be created anyway. Defaults to false.
 - `create_file` (Attributes) Ensure a file exists with the following contents. The path to this file will be available in the env var CHECKMATE_FILEPATH (see [below for nested schema](#nestedatt--create_file))
-- `env` (Map of String) Map of environment variables to apply to the command
+- `env` (Map of String) Map of environment variables to apply to the command. Inherits the parent environment
 - `interval` (Number) Interval in milliseconds between attemps. Default 200
 - `keepers` (Map of String) Arbitrary map of string values that when changed will cause the check to run again.
 - `timeout` (Number) Overall timeout in milliseconds for the check before giving up, default 10000
@@ -76,6 +85,7 @@ Required:
 
 Optional:
 
+- `create_directory` (Boolean) Create the target directory if it doesn't exist. Defaults to false.
 - `use_working_dir` (Boolean) If true, will use the working directory instead of a temporary directory. Defaults to false.
 
 Read-Only:
