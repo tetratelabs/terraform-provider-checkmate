@@ -32,6 +32,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/hashicorp/terraform-plugin-log/tflog"
 
 	"github.com/tetratelabs/terraform-provider-checkmate/internal/helpers"
 	"github.com/tetratelabs/terraform-provider-checkmate/internal/modifiers"
@@ -173,33 +174,33 @@ func (r *TCPEchoResource) TCPEcho(ctx context.Context, data *TCPEchoResourceMode
 		d := net.Dialer{Timeout: time.Duration(data.ConnectionTimeout.ValueInt64()) * time.Millisecond}
 		conn, err := d.Dial("tcp", destStr)
 		if err != nil {
-			diag.AddWarning(fmt.Sprintf("dial %q failed", destStr), err.Error())
+			tflog.Warn(ctx, fmt.Sprintf("dial %q failed: %v", destStr, err.Error()))
 			return false
 		}
 		defer conn.Close()
 
 		_, err = conn.Write([]byte(data.Message.ValueString() + "\n"))
 		if err != nil {
-			diag.AddWarning("write to server failed", err.Error())
+			tflog.Warn(ctx, fmt.Sprintf("write to server failed: %v", err.Error()))
 			return false
 		}
 
 		deadlineDuration := time.Millisecond * time.Duration(data.SingleAttemptTimeout.ValueInt64())
 		err = conn.SetDeadline(time.Now().Add(deadlineDuration))
 		if err != nil {
-			diag.AddWarning("could not set connection deadline", err.Error())
+			tflog.Warn(ctx, fmt.Sprintf("could not set connection deadline: %v", err.Error()))
 			return false
 		}
 
 		reply := make([]byte, 1024)
 		_, err = conn.Read(reply)
 		if err != nil {
-			diag.AddWarning("read from server failed", err.Error())
+			tflog.Warn(ctx, fmt.Sprintf("read from server failed: %v", err.Error()))
 			return false
 		}
 
 		if !strings.Contains(string(reply), data.ExpectedMessage.ValueString()) {
-			diag.AddWarning("unexpected response", fmt.Sprintf("Got response %q, which does not include expected message %q", string(reply), data.ExpectedMessage.ValueString()))
+			tflog.Warn(ctx, fmt.Sprintf("Got response %q, which does not include expected message %q", string(reply), data.ExpectedMessage.ValueString()))
 			return false
 		}
 

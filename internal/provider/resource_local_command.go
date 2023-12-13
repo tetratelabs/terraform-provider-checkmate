@@ -249,7 +249,6 @@ func (r *LocalCommandResource) RunCommand(ctx context.Context, data *LocalComman
 		if err != nil {
 			tflog.Trace(ctx, fmt.Sprintf("ATTEMPT #%d error starting command", attempt))
 			tflog.Error(ctx, fmt.Sprintf("Error starting command %v", err))
-			diag.AddWarning("Error starting command", fmt.Sprintf("%s", err))
 			return false
 		}
 		err = cmd.Wait()
