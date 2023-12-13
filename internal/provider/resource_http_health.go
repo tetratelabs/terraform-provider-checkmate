@@ -257,8 +257,7 @@ func (r *HttpHealthResource) HealthCheck(ctx context.Context, data *HttpHealthRe
 			Body:   io.NopCloser(strings.NewReader(data.RequestBody.ValueString())),
 		})
 		if err != nil {
-			tflog.Trace(ctx, fmt.Sprintf("CONNECTION FAILURE %v", err))
-			diag.AddWarning("Error connecting to healthcheck endpoint", fmt.Sprintf("%v", err))
+			tflog.Warn(ctx, fmt.Sprintf("CONNECTION FAILURE %v", err))
 			return false
 		}
 
@@ -267,11 +266,10 @@ func (r *HttpHealthResource) HealthCheck(ctx context.Context, data *HttpHealthRe
 			tflog.Trace(ctx, fmt.Sprintf("SUCCESS CODE %d", httpResponse.StatusCode))
 			body, err := io.ReadAll(httpResponse.Body)
 			if err != nil {
-				tflog.Trace(ctx, fmt.Sprintf("ERROR READING BODY %v", err))
-				diag.AddWarning("Error reading response body", fmt.Sprintf("%s", err))
+				tflog.Warn(ctx, fmt.Sprintf("ERROR READING BODY %v", err))
 				data.ResultBody = types.StringValue("")
 			} else {
-				tflog.Trace(ctx, fmt.Sprintf("READ %d BYTES", len(body)))
+				tflog.Warn(ctx, fmt.Sprintf("READ %d BYTES", len(body)))
 				data.ResultBody = types.StringValue(string(body))
 			}
 		} else {
