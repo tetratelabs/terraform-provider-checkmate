@@ -61,5 +61,3 @@ resource "checkmate_tcp_echo" "example" {
 
 - `id` (String) Identifier
 - `passed` (Boolean) True if the check passed
-
-
