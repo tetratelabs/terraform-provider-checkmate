@@ -91,5 +91,3 @@ Optional:
 Read-Only:
 
 - `path` (String) Path to the file that was created
-
-

@@ -94,5 +94,3 @@ resource "checkmate_http_health" "example_insecure_tls" {
 - `id` (String) Identifier
 - `passed` (Boolean) True if the check passed
 - `result_body` (String) Result body
-
-
