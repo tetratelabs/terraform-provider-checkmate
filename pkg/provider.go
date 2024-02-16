@@ -17,7 +17,7 @@ package pkg
 import (
 	framework "github.com/hashicorp/terraform-plugin-framework/provider"
 
-	"github.com/tetratelabs/terraform-provider-checkmate/internal/provider"
+	"github.com/tetratelabs/terraform-provider-checkmate/pkg/provider"
 )
 
 var version string = "1.6.0"

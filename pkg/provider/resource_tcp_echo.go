@@ -34,8 +34,8 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 
-	"github.com/tetratelabs/terraform-provider-checkmate/internal/helpers"
-	"github.com/tetratelabs/terraform-provider-checkmate/internal/modifiers"
+	"github.com/tetratelabs/terraform-provider-checkmate/pkg/helpers"
+	"github.com/tetratelabs/terraform-provider-checkmate/pkg/modifiers"
 )
 
 var _ resource.Resource = &TCPEchoResource{}

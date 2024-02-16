@@ -16,15 +16,9 @@ package provider
 
 import (
 	"context"
-	"crypto/tls"
-	"crypto/x509"
 	"fmt"
-	"io"
-	"net/http"
-	"net/url"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
@@ -34,10 +28,9 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
-	"github.com/hashicorp/terraform-plugin-log/tflog"
 
-	"github.com/tetratelabs/terraform-provider-checkmate/internal/helpers"
-	"github.com/tetratelabs/terraform-provider-checkmate/internal/modifiers"
+	"github.com/tetratelabs/terraform-provider-checkmate/pkg/healthcheck"
+	"github.com/tetratelabs/terraform-provider-checkmate/pkg/modifiers"
 )
 
 // Ensure provider defined types fully satisfy framework interfaces
@@ -182,113 +175,32 @@ func (r *HttpHealthResource) Create(ctx context.Context, req resource.CreateRequ
 }
 
 func (r *HttpHealthResource) HealthCheck(ctx context.Context, data *HttpHealthResourceModel, diag *diag.Diagnostics) {
-	data.Passed = types.BoolValue(false)
-	endpoint, err := url.Parse(data.URL.ValueString())
-	if err != nil {
-		diag.AddError("Client Error", fmt.Sprintf("Unable to parse url %q, got error %s", data.URL.ValueString(), err))
-		return
-	}
-
-	var checkCode func(int) bool
-	// check the pattern once
-	checkStatusCode(data.StatusCode.ValueString(), 0, diag)
-	if diag.HasError() {
-		return
-	}
-	checkCode = func(c int) bool { return checkStatusCode(data.StatusCode.ValueString(), c, diag) }
-
-	// normalize headers
-	headers := make(map[string][]string)
+	var tmp map[string]string
 	if !data.Headers.IsNull() {
-		tmp := make(map[string]string)
 		diag.Append(data.Headers.ElementsAs(ctx, &tmp, false)...)
-		if diag.HasError() {
-			return
-		}
-
-		for k, v := range tmp {
-			headers[k] = []string{v}
-		}
+	}
+	args := healthcheck.HttpHealthArgs{
+		URL:                  data.URL.ValueString(),
+		Method:               data.Method.ValueString(),
+		Timeout:              data.Timeout.ValueInt64(),
+		RequestTimeout:       data.RequestTimeout.ValueInt64(),
+		Interval:             data.Interval.ValueInt64(),
+		StatusCode:           data.StatusCode.ValueString(),
+		ConsecutiveSuccesses: data.ConsecutiveSuccesses.ValueInt64(),
+		Headers:              tmp,
+		IgnoreFailure:        data.IgnoreFailure.ValueBool(),
+		RequestBody:          data.RequestBody.ValueString(),
+		CABundle:             data.CABundle.ValueString(),
+		InsecureTLS:          data.InsecureTLS.ValueBool(),
 	}
 
-	window := helpers.RetryWindow{
-		Timeout:              time.Duration(data.Timeout.ValueInt64()) * time.Millisecond,
-		Interval:             time.Duration(data.Interval.ValueInt64()) * time.Millisecond,
-		ConsecutiveSuccesses: int(data.ConsecutiveSuccesses.ValueInt64()),
-	}
-	data.ResultBody = types.StringValue("")
-
-	if !data.CABundle.IsNull() && data.InsecureTLS.ValueBool() {
-		diag.AddError("Conflicting configuration", "You cannot specify both custom CA and insecure TLS. Please use only one of them.")
-	}
-	tlsConfig := &tls.Config{}
-	if !data.CABundle.IsNull() {
-		caCertPool := x509.NewCertPool()
-		if ok := caCertPool.AppendCertsFromPEM([]byte(data.CABundle.ValueString())); !ok {
-			diag.AddError("Building CA cert pool", err.Error())
-		}
-		tlsConfig.RootCAs = caCertPool
-	}
-	tlsConfig.InsecureSkipVerify = data.InsecureTLS.ValueBool()
-
-	client := http.Client{
-		Transport: &http.Transport{
-			TLSClientConfig: tlsConfig,
-		},
-		Timeout: time.Duration(data.RequestTimeout.ValueInt64()) * time.Millisecond,
+	err := healthcheck.HealthCheck(ctx, &args, diag)
+	if err != nil {
+		diag.AddError("Health Check Error", fmt.Sprintf("Error during health check: %s", err))
 	}
 
-	tflog.Debug(ctx, fmt.Sprintf("Starting HTTP health check. Overall timeout: %d ms, request timeout: %d ms", data.Timeout.ValueInt64(), data.RequestTimeout.ValueInt64()))
-	for h, v := range headers {
-		tflog.Debug(ctx, fmt.Sprintf("%s: %s", h, v))
-	}
-
-	result := window.Do(func(attempt int, successes int) bool {
-		if successes != 0 {
-			tflog.Trace(ctx, fmt.Sprintf("SUCCESS [%d/%d] http %s %s", successes, data.ConsecutiveSuccesses.ValueInt64(), data.Method.ValueString(), endpoint))
-		} else {
-			tflog.Trace(ctx, fmt.Sprintf("ATTEMPT #%d http %s %s", attempt, data.Method.ValueString(), endpoint))
-		}
-
-		httpResponse, err := client.Do(&http.Request{
-			URL:    endpoint,
-			Method: data.Method.ValueString(),
-			Header: headers,
-			Body:   io.NopCloser(strings.NewReader(data.RequestBody.ValueString())),
-		})
-		if err != nil {
-			tflog.Warn(ctx, fmt.Sprintf("CONNECTION FAILURE %v", err))
-			return false
-		}
-
-		success := checkCode(httpResponse.StatusCode)
-		if success {
-			tflog.Trace(ctx, fmt.Sprintf("SUCCESS CODE %d", httpResponse.StatusCode))
-			body, err := io.ReadAll(httpResponse.Body)
-			if err != nil {
-				tflog.Warn(ctx, fmt.Sprintf("ERROR READING BODY %v", err))
-				data.ResultBody = types.StringValue("")
-			} else {
-				tflog.Warn(ctx, fmt.Sprintf("READ %d BYTES", len(body)))
-				data.ResultBody = types.StringValue(string(body))
-			}
-		} else {
-			tflog.Trace(ctx, fmt.Sprintf("FAILURE CODE %d", httpResponse.StatusCode))
-		}
-		return success
-	})
-
-	switch result {
-	case helpers.Success:
-		data.Passed = types.BoolValue(true)
-	case helpers.TimeoutExceeded:
-		diag.AddWarning("Timeout exceeded", fmt.Sprintf("Timeout of %d milliseconds exceeded", data.Timeout.ValueInt64()))
-		if !data.IgnoreFailure.ValueBool() {
-			diag.AddError("Check failed", "The check did not pass within the timeout and create_anyway_on_check_failure is false")
-			return
-		}
-	}
-
+	data.Passed = types.BoolValue(args.Passed)
+	data.ResultBody = types.StringValue(args.ResultBody)
 }
 
 func (r *HttpHealthResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
