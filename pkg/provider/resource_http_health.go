@@ -123,6 +123,14 @@ func (*HttpHealthResource) Schema(ctx context.Context, req resource.SchemaReques
 				Optional:            true,
 				MarkdownDescription: "Wether or not to completely skip the TLS CA verification. Default false.",
 			},
+			"jsonpath": schema.StringAttribute{
+				Optional:            true,
+				MarkdownDescription: "Optional JSONPath expression (same syntax as kubectl jsonpath output) to apply to the result body. If the expression matches, the check will pass.",
+			},
+			"json_value": schema.StringAttribute{
+				Optional:            true,
+				MarkdownDescription: "Optional regular expression to apply to the result of the JSONPath expression. If the expression matches, the check will pass.",
+			},
 			"keepers": schema.MapAttribute{
 				ElementType:         types.StringType,
 				MarkdownDescription: "Arbitrary map of string values that when changed will cause the healthcheck to run again.",
@@ -149,6 +157,8 @@ type HttpHealthResourceModel struct {
 	CABundle             types.String `tfsdk:"ca_bundle"`
 	InsecureTLS          types.Bool   `tfsdk:"insecure_tls"`
 	Keepers              types.Map    `tfsdk:"keepers"`
+	JSONPath             types.String `tfsdk:"jsonpath"`
+	JSONValue            types.String `tfsdk:"json_value"`
 }
 
 func (r *HttpHealthResource) Metadata(ctx context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -192,6 +202,8 @@ func (r *HttpHealthResource) HealthCheck(ctx context.Context, data *HttpHealthRe
 		RequestBody:          data.RequestBody.ValueString(),
 		CABundle:             data.CABundle.ValueString(),
 		InsecureTLS:          data.InsecureTLS.ValueBool(),
+		JSONPath:             data.JSONPath.ValueString(),
+		JSONValue:            data.JSONValue.ValueString(),
 	}
 
 	err := healthcheck.HealthCheck(ctx, &args, diag)
