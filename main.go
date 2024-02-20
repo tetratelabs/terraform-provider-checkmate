@@ -21,7 +21,7 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-framework/providerserver"
 
-	"github.com/tetratelabs/terraform-provider-checkmate/internal/provider"
+	"github.com/tetratelabs/terraform-provider-checkmate/pkg/provider"
 )
 
 // Run "go generate" to format example terraform files and generate the docs for the registry/website
