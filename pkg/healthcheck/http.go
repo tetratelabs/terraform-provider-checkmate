@@ -158,23 +158,30 @@ func HealthCheck(ctx context.Context, data *HttpHealthArgs, diag *diag.Diagnosti
 		}
 
 		// Check JSONPath
-		j := jsonpath.New("parser")
-		err = j.Parse(data.JSONPath)
-		if err != nil {
-			tflog.Warn(ctx, fmt.Sprintf("ERROR PARSING JSONPATH EXPRESSION %v", err))
-			return false
-		}
-		var respJSON interface{}
-		json.Unmarshal([]byte(data.ResultBody), &respJSON)
-		buf := new(bytes.Buffer)
-		err = j.Execute(buf, respJSON)
-		if err != nil {
-			tflog.Warn(ctx, fmt.Sprintf("ERROR EXECUTING JSONPATH %v", err))
-			return false
+		if data.JSONPath != "" && data.JSONValue != "" {
+			j := jsonpath.New("parser")
+			err = j.Parse(data.JSONPath)
+			if err != nil {
+				tflog.Warn(ctx, fmt.Sprintf("ERROR PARSING JSONPATH EXPRESSION %v", err))
+				return false
+			}
+			var respJSON interface{}
+			err = json.Unmarshal([]byte(data.ResultBody), &respJSON)
+			if err != nil {
+				tflog.Warn(ctx, fmt.Sprintf("ERROR UNMARSHALLING JSON %v", err))
+				return false
+			}
+			buf := new(bytes.Buffer)
+			err = j.Execute(buf, respJSON)
+			if err != nil {
+				tflog.Warn(ctx, fmt.Sprintf("ERROR EXECUTING JSONPATH %v", err))
+				return false
+			}
+			re := regexp.MustCompile(data.JSONValue)
+			return re.MatchString(buf.String())
 		}
 
-		re := regexp.MustCompile(data.JSONValue)
-		return re.MatchString(buf.String())
+		return success
 	})
 
 	switch result {

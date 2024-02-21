@@ -25,11 +25,10 @@ import (
 )
 
 func TestAccHttpHealthResource(t *testing.T) {
-	// testUrl := "http://example.com"
 	timeout := 6000 // 6s
 	httpBin, envExists := os.LookupEnv("HTTPBIN")
 	if !envExists {
-		httpBin = "https://httpbin.org"
+		httpBin = "https://httpbin.platform.tetrate.com"
 	}
 	url200 := httpBin + "/status/200"
 	urlPost := httpBin + "/post"
@@ -58,20 +57,18 @@ func TestAccHttpHealthResource(t *testing.T) {
 					resource.TestCheckResourceAttrWith("checkmate_http_health.test_post", "result_body", checkResponse("hello")),
 				),
 			},
-			// ImportState testing
-			// {
-			// 	ResourceName:      "checkmate_http_health.test",
-			// 	ImportState:       true,
-			// 	ImportStateVerify: true,
-			// },
-			// Update and Read testing
-			// {
-			// 	Config: testAccHttpHealthResourceConfig(testUrl2),
-			// 	Check: resource.ComposeAggregateTestCheckFunc(
-			// 		resource.TestCheckResourceAttr("checkmate_http_health.test", "url", testUrl2),
-			// 	),
-			// },
-			// Delete testing automatically occurs in TestCase
+			{
+				Config: testJSONPath("test_jp", "https://httpbin.platform.tetrate.com/headers", "{ .headers.Host }", "httpbin.platform.tetrate.com"),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("checkmate_http_health.test_jp", "passed", "true"),
+				),
+			},
+			{
+				Config: testJSONPath("test_jp_re", urlHeaders, "{ .headers.User-Agent }", "Go-(http|https)-client.*"),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("checkmate_http_health.test_jp_re", "passed", "true"),
+				),
+			},
 		},
 	})
 }
@@ -122,6 +119,7 @@ resource "checkmate_http_health" %[1]q {
 }
 `, name, url, timeout)
 }
+
 func testAccHttpHealthResourceConfigWithBody(name string, url string, body string, timeout int) string {
 	return fmt.Sprintf(`
 resource "checkmate_http_health" %[1]q {
@@ -135,6 +133,21 @@ resource "checkmate_http_health" %[1]q {
   timeout = %[4]d
 }
 `, name, url, body, timeout)
+
+}
+
+func testJSONPath(name string, url, jsonpath, json_value string) string {
+	return fmt.Sprintf(`
+resource "checkmate_http_health" %[1]q {
+  url = %[2]q
+  consecutive_successes = 1
+  method = "GET"
+  timeout = 1000 * 10
+  interval = 1000 * 2
+  jsonpath = %[3]q
+  json_value = %[4]q
+}
+`, name, url, jsonpath, json_value)
 
 }
 
@@ -168,4 +181,11 @@ func checkResponse(value string) func(string) error {
 		}
 		return fmt.Errorf("Bad response from httpbin")
 	}
+}
+
+func checkPassed(value string) error {
+	if value == "true" {
+		return nil
+	}
+	return fmt.Errorf("test did not pass")
 }
