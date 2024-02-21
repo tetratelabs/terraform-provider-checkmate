@@ -15,14 +15,17 @@
 package healthcheck
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -31,6 +34,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"github.com/tetratelabs/terraform-provider-checkmate/pkg/helpers"
+	"k8s.io/client-go/util/jsonpath"
 )
 
 type HttpHealthArgs struct {
@@ -48,6 +52,8 @@ type HttpHealthArgs struct {
 	ResultBody           string
 	CABundle             string
 	InsecureTLS          bool
+	JSONPath             string
+	JSONValue            string
 }
 
 func HealthCheck(ctx context.Context, data *HttpHealthArgs, diag *diag.Diagnostics) error {
@@ -58,6 +64,11 @@ func HealthCheck(ctx context.Context, data *HttpHealthArgs, diag *diag.Diagnosti
 	if err != nil {
 		diagAddError(diag, "Client Error", fmt.Sprintf("Unable to parse url %q, got error %s", data.URL, err))
 		return fmt.Errorf("parse url %q: %w", data.URL, err)
+	}
+
+	if (data.JSONPath != "" && data.JSONValue == "") || (data.JSONPath == "" && data.JSONValue != "") {
+		diagAddError(diag, "Client Error", "Both JSONPath and JSONValue must be specified")
+		return errors.New("both JSONPath and JSONValue must be specified")
 	}
 
 	var checkCode func(int) (bool, error)
@@ -145,6 +156,31 @@ func HealthCheck(ctx context.Context, data *HttpHealthArgs, diag *diag.Diagnosti
 		} else {
 			tflog.Trace(ctx, fmt.Sprintf("FAILURE CODE %d", httpResponse.StatusCode))
 		}
+
+		// Check JSONPath
+		if data.JSONPath != "" && data.JSONValue != "" {
+			j := jsonpath.New("parser")
+			err = j.Parse(data.JSONPath)
+			if err != nil {
+				tflog.Warn(ctx, fmt.Sprintf("ERROR PARSING JSONPATH EXPRESSION %v", err))
+				return false
+			}
+			var respJSON interface{}
+			err = json.Unmarshal([]byte(data.ResultBody), &respJSON)
+			if err != nil {
+				tflog.Warn(ctx, fmt.Sprintf("ERROR UNMARSHALLING JSON %v", err))
+				return false
+			}
+			buf := new(bytes.Buffer)
+			err = j.Execute(buf, respJSON)
+			if err != nil {
+				tflog.Warn(ctx, fmt.Sprintf("ERROR EXECUTING JSONPATH %v", err))
+				return false
+			}
+			re := regexp.MustCompile(data.JSONValue)
+			return re.MatchString(buf.String())
+		}
+
 		return success
 	})
 
