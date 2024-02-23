@@ -73,9 +73,9 @@ func HealthCheck(ctx context.Context, data *HttpHealthArgs, diag *diag.Diagnosti
 
 	var checkCode func(int) (bool, error)
 	// check the pattern once
-	checkStatusCode(data.StatusCode, 0, diag)
-	if diag.HasError() {
-		return fmt.Errorf("bad status code pattern")
+	_, err = checkStatusCode(data.StatusCode, 0, diag)
+	if err != nil {
+		return fmt.Errorf("bad status code pattern: %w", err)
 	}
 	checkCode = func(c int) (bool, error) { return checkStatusCode(data.StatusCode, c, diag) }
 
@@ -234,7 +234,7 @@ func checkStatusCode(pattern string, code int, diag *diag.Diagnostics) (bool, er
 			return false, errors.New("too many dashes in range pattern")
 		}
 	}
-	return false, errors.New("status code does not match pattern")
+	return false, nil
 }
 
 func diagAddError(diag *diag.Diagnostics, summary string, details string) {
