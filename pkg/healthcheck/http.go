@@ -191,7 +191,7 @@ func HealthCheck(ctx context.Context, data *HttpHealthArgs, diag *diag.Diagnosti
 		diagAddWarning(diag, "Timeout exceeded", fmt.Sprintf("Timeout of %d milliseconds exceeded", data.Timeout))
 		if !data.IgnoreFailure {
 			diagAddError(diag, "Check failed", "The check did not pass within the timeout and create_anyway_on_check_failure is false")
-			multierror.Append(err, fmt.Errorf("the check did not pass within the timeout and create_anyway_on_check_failure is false"))
+			err = multierror.Append(err, fmt.Errorf("the check did not pass within the timeout and create_anyway_on_check_failure is false"))
 		}
 	}
 
