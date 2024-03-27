@@ -122,9 +122,9 @@ func HealthCheck(ctx context.Context, data *HttpHealthArgs, diag *diag.Diagnosti
 
 	result := window.Do(func(attempt int, successes int) bool {
 		if successes != 0 {
-			tflog.Trace(ctx, fmt.Sprintf("SUCCESS [%d/%d] http %s %s", successes, data.ConsecutiveSuccesses, data.Method, endpoint))
+			tflog.Debug(ctx, fmt.Sprintf("SUCCESS [%d/%d] http %s %s", successes, data.ConsecutiveSuccesses, data.Method, endpoint))
 		} else {
-			tflog.Trace(ctx, fmt.Sprintf("ATTEMPT #%d http %s %s", attempt, data.Method, endpoint))
+			tflog.Debug(ctx, fmt.Sprintf("ATTEMPT #%d http %s %s", attempt, data.Method, endpoint))
 		}
 
 		httpResponse, err := client.Do(&http.Request{
@@ -144,7 +144,7 @@ func HealthCheck(ctx context.Context, data *HttpHealthArgs, diag *diag.Diagnosti
 			multierror.Append(err, fmt.Errorf("check status code: %w", err))
 		}
 		if success {
-			tflog.Trace(ctx, fmt.Sprintf("SUCCESS CODE %d", httpResponse.StatusCode))
+			tflog.Debug(ctx, fmt.Sprintf("SUCCESS CODE %d", httpResponse.StatusCode))
 			body, err := io.ReadAll(httpResponse.Body)
 			if err != nil {
 				tflog.Warn(ctx, fmt.Sprintf("ERROR READING BODY %v", err))
@@ -154,7 +154,7 @@ func HealthCheck(ctx context.Context, data *HttpHealthArgs, diag *diag.Diagnosti
 				data.ResultBody = string(body)
 			}
 		} else {
-			tflog.Trace(ctx, fmt.Sprintf("FAILURE CODE %d", httpResponse.StatusCode))
+			tflog.Debug(ctx, fmt.Sprintf("FAILURE CODE %d", httpResponse.StatusCode))
 		}
 
 		// Check JSONPath
