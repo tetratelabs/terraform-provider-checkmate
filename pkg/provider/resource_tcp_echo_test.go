@@ -38,6 +38,32 @@ func TestAccTCPEchoResource(t *testing.T) {
 					resource.TestCheckResourceAttr("checkmate_tcp_echo.test_failure", "passed", "false"),
 				),
 			},
+			{
+				Config: `resource "checkmate_tcp_echo" "test" {
+	host = "tcpbin.com"
+	port = 4234
+	message = "abc"
+	timeout = 1000
+	expected_message = "abc"
+	expect_failure = true
+}`,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("checkmate_tcp_echo.test", "passed", "true"),
+				),
+			},
+			{
+				Config: `resource "checkmate_tcp_echo" "test" {
+	host = "tcpbin.com"
+	port = 4242
+	message = "abc"
+	timeout = 1000
+	expected_message = "abc"
+	expect_failure = false
+}`,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("checkmate_tcp_echo.test", "passed", "true"),
+				),
+			},
 		},
 	})
 }

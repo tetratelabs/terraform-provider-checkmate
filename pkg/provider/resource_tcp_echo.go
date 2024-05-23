@@ -28,7 +28,9 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -66,7 +68,17 @@ func (*TCPEchoResource) Schema(ctx context.Context, req resource.SchemaRequest, 
 			},
 			"expected_message": schema.StringAttribute{
 				MarkdownDescription: "The message expected to be included in the echo response",
-				Required:            true,
+				Required:            false,
+				Optional:            true,
+				Computed:            true,
+				Default:             stringdefault.StaticString(""),
+			},
+			"expect_failure": schema.BoolAttribute{
+				MarkdownDescription: "Wether or not the check is expected to fail after successfully connecting to the target. If true, the check will be considered successful if it fails. Defaults to false.",
+				Required:            false,
+				Optional:            true,
+				Computed:            true,
+				Default:             booldefault.StaticBool(false),
 			},
 			"timeout": schema.Int64Attribute{
 				MarkdownDescription: "Overall timeout in milliseconds for the check before giving up, default 10000",
@@ -125,6 +137,7 @@ type TCPEchoResourceModel struct {
 	Port                 types.Int64  `tfsdk:"port"`
 	Message              types.String `tfsdk:"message"`
 	ExpectedMessage      types.String `tfsdk:"expected_message"`
+	ExpectFailure        types.Bool   `tfsdk:"expect_failure"`
 	ConnectionTimeout    types.Int64  `tfsdk:"connection_timeout"`
 	SingleAttemptTimeout types.Int64  `tfsdk:"single_attempt_timeout"`
 	Timeout              types.Int64  `tfsdk:"timeout"`
@@ -160,6 +173,14 @@ func (r *TCPEchoResource) Create(ctx context.Context, req resource.CreateRequest
 }
 
 func (r *TCPEchoResource) TCPEcho(ctx context.Context, data *TCPEchoResourceModel, diag *diag.Diagnostics) {
+	if !data.ExpectFailure.ValueBool() && data.ExpectedMessage.ValueString() == "" {
+		tflog.Error(ctx, "expected_message is required when expect_failure is false")
+		return
+	}
+	if data.ExpectedMessage.ValueString() != "" && data.ExpectFailure.ValueBool() {
+		tflog.Warn(ctx, "expected_message is ignored when expect_failure is true")
+	}
+
 	data.Passed = types.BoolValue(false)
 
 	window := helpers.RetryWindow{
@@ -169,6 +190,7 @@ func (r *TCPEchoResource) TCPEcho(ctx context.Context, data *TCPEchoResourceMode
 	}
 
 	result := window.Do(func(attempt int, success int) bool {
+		exepctFailure := data.ExpectFailure.ValueBool()
 		destStr := data.Host.ValueString() + ":" + strconv.Itoa(int(data.Port.ValueInt64()))
 
 		d := net.Dialer{Timeout: time.Duration(data.ConnectionTimeout.ValueInt64()) * time.Millisecond}
@@ -187,7 +209,7 @@ func (r *TCPEchoResource) TCPEcho(ctx context.Context, data *TCPEchoResourceMode
 
 		deadlineDuration := time.Millisecond * time.Duration(data.SingleAttemptTimeout.ValueInt64())
 		err = conn.SetDeadline(time.Now().Add(deadlineDuration))
-		if err != nil {
+		if err != nil && !exepctFailure {
 			tflog.Warn(ctx, fmt.Sprintf("could not set connection deadline: %v", err.Error()))
 			return false
 		}
@@ -195,7 +217,16 @@ func (r *TCPEchoResource) TCPEcho(ctx context.Context, data *TCPEchoResourceMode
 		reply := make([]byte, 1024)
 		_, err = conn.Read(reply)
 		if err != nil {
+			if exepctFailure {
+				// We expected this
+				return true
+			}
 			tflog.Warn(ctx, fmt.Sprintf("read from server failed: %v", err.Error()))
+			return false
+		}
+		// At this point, if we expect failure, we can just return the check failed,
+		// as we were expecting it to fail
+		if exepctFailure {
 			return false
 		}
 
