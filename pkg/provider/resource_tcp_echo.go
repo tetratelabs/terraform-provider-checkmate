@@ -73,7 +73,7 @@ func (*TCPEchoResource) Schema(ctx context.Context, req resource.SchemaRequest, 
 				Computed:            true,
 				Default:             stringdefault.StaticString(""),
 			},
-			"expect_failure": schema.BoolAttribute{
+			"expect_write_failure": schema.BoolAttribute{
 				MarkdownDescription: "Wether or not the check is expected to fail after successfully connecting to the target. If true, the check will be considered successful if it fails. Defaults to false.",
 				Required:            false,
 				Optional:            true,
@@ -137,7 +137,7 @@ type TCPEchoResourceModel struct {
 	Port                 types.Int64  `tfsdk:"port"`
 	Message              types.String `tfsdk:"message"`
 	ExpectedMessage      types.String `tfsdk:"expected_message"`
-	ExpectFailure        types.Bool   `tfsdk:"expect_failure"`
+	ExpectWriteFailure   types.Bool   `tfsdk:"expect_write_failure"`
 	ConnectionTimeout    types.Int64  `tfsdk:"connection_timeout"`
 	SingleAttemptTimeout types.Int64  `tfsdk:"single_attempt_timeout"`
 	Timeout              types.Int64  `tfsdk:"timeout"`
@@ -173,11 +173,11 @@ func (r *TCPEchoResource) Create(ctx context.Context, req resource.CreateRequest
 }
 
 func (r *TCPEchoResource) TCPEcho(ctx context.Context, data *TCPEchoResourceModel, diag *diag.Diagnostics) {
-	if !data.ExpectFailure.ValueBool() && data.ExpectedMessage.ValueString() == "" {
+	if !data.ExpectWriteFailure.ValueBool() && data.ExpectedMessage.ValueString() == "" {
 		tflog.Error(ctx, "expected_message is required when expect_failure is false")
 		return
 	}
-	if data.ExpectedMessage.ValueString() != "" && data.ExpectFailure.ValueBool() {
+	if data.ExpectedMessage.ValueString() != "" && data.ExpectWriteFailure.ValueBool() {
 		tflog.Warn(ctx, "expected_message is ignored when expect_failure is true")
 	}
 
@@ -190,7 +190,7 @@ func (r *TCPEchoResource) TCPEcho(ctx context.Context, data *TCPEchoResourceMode
 	}
 
 	result := window.Do(func(attempt int, success int) bool {
-		exepctFailure := data.ExpectFailure.ValueBool()
+		exepctFailure := data.ExpectWriteFailure.ValueBool()
 		destStr := data.Host.ValueString() + ":" + strconv.Itoa(int(data.Port.ValueInt64()))
 
 		d := net.Dialer{Timeout: time.Duration(data.ConnectionTimeout.ValueInt64()) * time.Millisecond}

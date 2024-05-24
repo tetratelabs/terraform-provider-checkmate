@@ -35,7 +35,7 @@ resource "checkmate_tcp_echo" "example" {
   message = "PROXY nonexistent.local:4242 foobartest"
 
   # Expect this to fail
-  expect_failure = true
+  expect_write_failure = true
 
   # Set the connection timeout for the destination host, in milliseconds
   connection_timeout = 3000
