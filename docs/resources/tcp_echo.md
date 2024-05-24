@@ -77,7 +77,7 @@ resource "checkmate_tcp_echo" "example" {
 - `connection_timeout` (Number) The timeout for stablishing a new TCP connection in milliseconds
 - `consecutive_successes` (Number) Number of consecutive successes required before the check is considered successful overall. Defaults to 1.
 - `create_anyway_on_check_failure` (Boolean) If false, the resource will fail to create if the check does not pass. If true, the resource will be created anyway. Defaults to false.
-- `expect_write_failure` (Boolean) Whether or not the check is expected to fail after successfully connecting to the target. If true, the check will be considered successful if it fails. Defaults to false.
+- `expect_write_failure` (Boolean) Wether or not the check is expected to fail after successfully connecting to the target. If true, the check will be considered successful if it fails. Defaults to false.
 - `expected_message` (String) The message expected to be included in the echo response
 - `interval` (Number) Interval in milliseconds between attemps. Default 200
 - `keepers` (Map of String) Arbitrary map of string values that when changed will cause the check to run again.
