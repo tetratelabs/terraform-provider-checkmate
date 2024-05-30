@@ -14,9 +14,13 @@
 
 package helpers
 
-import "time"
+import (
+	"context"
+	"time"
+)
 
 type RetryWindow struct {
+	Context              context.Context
 	Timeout              time.Duration
 	Interval             time.Duration
 	ConsecutiveSuccesses int
@@ -27,10 +31,12 @@ type RetryResult int
 const (
 	Success RetryResult = iota
 	TimeoutExceeded
+	Failure
 )
 
 func (r *RetryWindow) Do(action func(attempt int, successes int) bool) RetryResult {
-	success := make(chan bool)
+	success := make(chan struct{})
+	failure := make(chan struct{})
 	go func() {
 		attempt := 0
 		successCount := 0
@@ -40,11 +46,19 @@ func (r *RetryWindow) Do(action func(attempt int, successes int) bool) RetryResu
 			if action(attempt, successCount) {
 				successCount++
 				if successCount >= r.ConsecutiveSuccesses {
-					success <- true
+					success <- struct{}{}
 					return
 				}
 			} else {
 				successCount = 0
+			}
+			if r.Context != nil {
+				if err := r.Context.Err(); err != nil {
+					if err == context.Canceled || err == context.DeadlineExceeded {
+						failure <- struct{}{}
+						return
+					}
+				}
 			}
 			time.Sleep(r.Interval)
 		}
@@ -54,6 +68,8 @@ func (r *RetryWindow) Do(action func(attempt int, successes int) bool) RetryResu
 	select {
 	case <-success:
 		return Success
+	case <-failure:
+		return Failure
 	case <-time.After(r.Timeout):
 		return TimeoutExceeded
 	}

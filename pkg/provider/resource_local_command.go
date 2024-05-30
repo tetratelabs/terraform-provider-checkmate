@@ -202,6 +202,7 @@ func (r *LocalCommandResource) RunCommand(ctx context.Context, data *LocalComman
 	data.Stderr = types.StringNull()
 
 	window := helpers.RetryWindow{
+		Context:              ctx,
 		Timeout:              time.Duration(data.Timeout.ValueInt64()) * time.Millisecond,
 		Interval:             time.Duration(data.Interval.ValueInt64()) * time.Millisecond,
 		ConsecutiveSuccesses: int(data.ConsecutiveSuccesses.ValueInt64()),
