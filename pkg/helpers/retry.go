@@ -42,27 +42,24 @@ func (r *RetryWindow) Do(action func(attempt int, successes int) bool) RetryResu
 		successCount := 0
 		// run a while true loop, exiting when the timeout expires
 		for {
-			attempt++
-			if action(attempt, successCount) {
-				successCount++
-				if successCount >= r.ConsecutiveSuccesses {
-					success <- struct{}{}
-					return
-				}
-			} else {
-				successCount = 0
-			}
-			if r.Context != nil {
-				if err := r.Context.Err(); err != nil {
-					if err == context.Canceled || err == context.DeadlineExceeded {
-						failure <- struct{}{}
+			select {
+			case <-r.Context.Done():
+				failure <- struct{}{}
+				return
+			default:
+				attempt++
+				if action(attempt, successCount) {
+					successCount++
+					if successCount >= r.ConsecutiveSuccesses {
+						success <- struct{}{}
 						return
 					}
+				} else {
+					successCount = 0
 				}
+				time.Sleep(r.Interval)
 			}
-			time.Sleep(r.Interval)
 		}
-
 	}()
 
 	select {
