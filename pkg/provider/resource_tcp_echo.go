@@ -184,6 +184,7 @@ func (r *TCPEchoResource) TCPEcho(ctx context.Context, data *TCPEchoResourceMode
 	data.Passed = types.BoolValue(false)
 
 	window := helpers.RetryWindow{
+		Context:              ctx,
 		Timeout:              time.Duration(data.Timeout.ValueInt64()) * time.Millisecond,
 		Interval:             time.Duration(data.Interval.ValueInt64()) * time.Millisecond,
 		ConsecutiveSuccesses: int(data.ConsecutiveSuccesses.ValueInt64()),

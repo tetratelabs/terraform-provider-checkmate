@@ -88,6 +88,7 @@ func HealthCheck(ctx context.Context, data *HttpHealthArgs, diag *diag.Diagnosti
 	}
 
 	window := helpers.RetryWindow{
+		Context:              ctx,
 		Timeout:              time.Duration(data.Timeout) * time.Millisecond,
 		Interval:             time.Duration(data.Interval) * time.Millisecond,
 		ConsecutiveSuccesses: int(data.ConsecutiveSuccesses),
