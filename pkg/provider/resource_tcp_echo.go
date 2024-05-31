@@ -15,9 +15,11 @@
 package provider
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"net"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -72,6 +74,18 @@ func (*TCPEchoResource) Schema(ctx context.Context, req resource.SchemaRequest, 
 				Optional:            true,
 				Computed:            true,
 				Default:             stringdefault.StaticString(""),
+			},
+			"persistent_response_regex": schema.StringAttribute{
+				MarkdownDescription: `A regex pattern that the response need to match in every attempt to be considered successful.
+If not provided, the response is not checked.
+
+If using multiple attempts, this regex will be evaulated against the response text. For every susequent attempt, the regex
+will be evaluated against the response text and compared against the first obtained value. The check will be deemed successful
+if the regex matches the response text in every attempt. A single response not matching such value will cause the check to fail.`,
+				Required: false,
+				Optional: true,
+				Computed: true,
+				Default:  stringdefault.StaticString(""),
 			},
 			"expect_write_failure": schema.BoolAttribute{
 				MarkdownDescription: "Wether or not the check is expected to fail after successfully connecting to the target. If true, the check will be considered successful if it fails. Defaults to false.",
@@ -132,20 +146,21 @@ func (*TCPEchoResource) Schema(ctx context.Context, req resource.SchemaRequest, 
 }
 
 type TCPEchoResourceModel struct {
-	Id                   types.String `tfsdk:"id"`
-	Host                 types.String `tfsdk:"host"`
-	Port                 types.Int64  `tfsdk:"port"`
-	Message              types.String `tfsdk:"message"`
-	ExpectedMessage      types.String `tfsdk:"expected_message"`
-	ExpectWriteFailure   types.Bool   `tfsdk:"expect_write_failure"`
-	ConnectionTimeout    types.Int64  `tfsdk:"connection_timeout"`
-	SingleAttemptTimeout types.Int64  `tfsdk:"single_attempt_timeout"`
-	Timeout              types.Int64  `tfsdk:"timeout"`
-	Interval             types.Int64  `tfsdk:"interval"`
-	ConsecutiveSuccesses types.Int64  `tfsdk:"consecutive_successes"`
-	IgnoreFailure        types.Bool   `tfsdk:"create_anyway_on_check_failure"`
-	Passed               types.Bool   `tfsdk:"passed"`
-	Keepers              types.Map    `tfsdk:"keepers"`
+	Id                      types.String `tfsdk:"id"`
+	Host                    types.String `tfsdk:"host"`
+	Port                    types.Int64  `tfsdk:"port"`
+	Message                 types.String `tfsdk:"message"`
+	ExpectedMessage         types.String `tfsdk:"expected_message"`
+	PersistentResponseRegex types.String `tfsdk:"persistent_response_regex"`
+	ExpectWriteFailure      types.Bool   `tfsdk:"expect_write_failure"`
+	ConnectionTimeout       types.Int64  `tfsdk:"connection_timeout"`
+	SingleAttemptTimeout    types.Int64  `tfsdk:"single_attempt_timeout"`
+	Timeout                 types.Int64  `tfsdk:"timeout"`
+	Interval                types.Int64  `tfsdk:"interval"`
+	ConsecutiveSuccesses    types.Int64  `tfsdk:"consecutive_successes"`
+	IgnoreFailure           types.Bool   `tfsdk:"create_anyway_on_check_failure"`
+	Passed                  types.Bool   `tfsdk:"passed"`
+	Keepers                 types.Map    `tfsdk:"keepers"`
 }
 
 // ImportState implements resource.ResourceWithImportState
@@ -190,6 +205,19 @@ func (r *TCPEchoResource) TCPEcho(ctx context.Context, data *TCPEchoResourceMode
 		ConsecutiveSuccesses: int(data.ConsecutiveSuccesses.ValueInt64()),
 	}
 
+	firstAttemptRegexValue := ""
+	regexValueStoredAttempt := 0
+	var persistentResponseRegex *regexp.Regexp
+	var err error
+	if data.PersistentResponseRegex.ValueString() != "" {
+		persistentResponseRegex, err = regexp.Compile(data.PersistentResponseRegex.ValueString())
+		if err != nil {
+			tflog.Error(ctx, fmt.Sprintf("could not compile regex %q: %v", data.PersistentResponseRegex.ValueString(), err.Error()))
+			diag.AddError("Invalid regex", fmt.Sprintf("Could not compile regex %q: %v", data.PersistentResponseRegex.ValueString(), err.Error()))
+			return
+		}
+	}
+
 	result := window.Do(func(attempt int, success int) bool {
 		exepctFailure := data.ExpectWriteFailure.ValueBool()
 		destStr := data.Host.ValueString() + ":" + strconv.Itoa(int(data.Port.ValueInt64()))
@@ -231,8 +259,36 @@ func (r *TCPEchoResource) TCPEcho(ctx context.Context, data *TCPEchoResourceMode
 			return false
 		}
 
+		// remove null char from response
+		reply = bytes.Trim(reply, "\x00")
+
+		if persistentResponseRegex != nil {
+			limits := persistentResponseRegex.FindStringIndex(string(reply))
+			if limits == nil {
+				tflog.Warn(ctx, fmt.Sprintf("Got response %q, which does not match regex %q", string(reply), data.PersistentResponseRegex.ValueString()))
+				diag.AddWarning("Check failed", fmt.Sprintf("Got response %q, which does not match regex %q", string(reply), data.PersistentResponseRegex.ValueString()))
+				return false
+			}
+			result := string(reply)[limits[0]:limits[1]]
+			// result := persistentResponseRegex.FindString(string(reply))
+			tflog.Info(ctx, fmt.Sprintf("Result: %s", result))
+
+			// Avoid comparison on first attempt
+			if regexValueStoredAttempt == 0 {
+				firstAttemptRegexValue = result
+				regexValueStoredAttempt = attempt
+				return true
+			}
+			if firstAttemptRegexValue != result {
+				tflog.Warn(ctx, fmt.Sprintf("Got response %q, which does not match previous attempt %q", result, firstAttemptRegexValue))
+				diag.AddWarning("Check failed", fmt.Sprintf("Got response %q, which does not match previous attempt %q", result, firstAttemptRegexValue))
+				return false
+			}
+		}
+
 		if !strings.Contains(string(reply), data.ExpectedMessage.ValueString()) {
 			tflog.Warn(ctx, fmt.Sprintf("Got response %q, which does not include expected message %q", string(reply), data.ExpectedMessage.ValueString()))
+			diag.AddWarning("Check failed", fmt.Sprintf("Got response %q, which does not include expected message %q", string(reply), data.ExpectedMessage.ValueString()))
 			return false
 		}
 
