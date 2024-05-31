@@ -81,6 +81,12 @@ resource "checkmate_tcp_echo" "example" {
 - `expected_message` (String) The message expected to be included in the echo response
 - `interval` (Number) Interval in milliseconds between attemps. Default 200
 - `keepers` (Map of String) Arbitrary map of string values that when changed will cause the check to run again.
+- `persistent_response_regex` (String) A regex pattern that the response need to match in every attempt to be considered successful.
+  If not provided, the response is not checked.
+
+  If using multiple attempts, this regex will be evaulated against the response text. For every susequent attempt, the regex
+  will be evaluated against the response text and compared against the first obtained value. The check will be deemed successful
+  if the regex matches the response text in every attempt. A single response not matching such value will cause the check to fail.
 - `single_attempt_timeout` (Number) Timeout for an individual attempt. If exceeded, the attempt will be considered failure and potentially retried. Default 5000ms
 - `timeout` (Number) Overall timeout in milliseconds for the check before giving up, default 10000
 

@@ -77,11 +77,11 @@ func (*TCPEchoResource) Schema(ctx context.Context, req resource.SchemaRequest, 
 			},
 			"persistent_response_regex": schema.StringAttribute{
 				MarkdownDescription: `A regex pattern that the response need to match in every attempt to be considered successful.
-If not provided, the response is not checked.
+  If not provided, the response is not checked.
 
-If using multiple attempts, this regex will be evaulated against the response text. For every susequent attempt, the regex
-will be evaluated against the response text and compared against the first obtained value. The check will be deemed successful
-if the regex matches the response text in every attempt. A single response not matching such value will cause the check to fail.`,
+  If using multiple attempts, this regex will be evaulated against the response text. For every susequent attempt, the regex
+  will be evaluated against the response text and compared against the first obtained value. The check will be deemed successful
+  if the regex matches the response text in every attempt. A single response not matching such value will cause the check to fail.`,
 				Required: false,
 				Optional: true,
 				Computed: true,
