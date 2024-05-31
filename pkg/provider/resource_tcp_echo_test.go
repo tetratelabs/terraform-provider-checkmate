@@ -38,6 +38,24 @@ func TestAccTCPEchoResource(t *testing.T) {
 					resource.TestCheckResourceAttr("checkmate_tcp_echo.test_failure", "passed", "false"),
 				),
 			},
+			{
+				Config: testAccTCPEchoResourceConfig("test_failure", "foo.bar", 1234, "foobar", "foobar", true),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("checkmate_tcp_echo.test_failure", "passed", "false"),
+				),
+			},
+			{
+				Config: testTCPEchoResourceRegex("test_regex_ok", `\(.*\)`, false),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("checkmate_tcp_echo.test_regex_ok", "passed", "true"),
+				),
+			},
+			{
+				Config: testTCPEchoResourceRegex("test_regex_not_match_pass_anyway", "test", true),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("checkmate_tcp_echo.test_regex_not_match_pass_anyway", "passed", "false"),
+				),
+			},
 		},
 	})
 }
@@ -52,5 +70,20 @@ resource "checkmate_tcp_echo" %q {
 	expected_message = %q
 	create_anyway_on_check_failure = %t
 }`, name, host, port, message, expected_message, ignore_failure)
+
+}
+
+func testTCPEchoResourceRegex(name, regex string, ignore_failure bool) string {
+	return fmt.Sprintf(`
+resource "checkmate_tcp_echo" %q {
+	host = "tcpecho.platform.tetrate.com"
+	port = 15080
+	message = "foobar (123)"
+	timeout = 1000 * 10
+	expected_message = "foobar (123)"
+	persistent_response_regex = %q
+	create_anyway_on_check_failure = %t
+	consecutive_successes = 2
+}`, name, regex, ignore_failure)
 
 }
