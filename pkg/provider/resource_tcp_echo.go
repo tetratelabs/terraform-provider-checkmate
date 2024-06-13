@@ -205,8 +205,7 @@ func (r *TCPEchoResource) TCPEcho(ctx context.Context, data *TCPEchoResourceMode
 		ConsecutiveSuccesses: int(data.ConsecutiveSuccesses.ValueInt64()),
 	}
 
-	firstAttemptRegexValue := ""
-	regexValueStoredAttempt := 0
+	previousRegexValue := ""
 	var persistentResponseRegex *regexp.Regexp
 	var err error
 	if data.PersistentResponseRegex.ValueString() != "" {
@@ -273,15 +272,11 @@ func (r *TCPEchoResource) TCPEcho(ctx context.Context, data *TCPEchoResourceMode
 			// result := persistentResponseRegex.FindString(string(reply))
 			tflog.Info(ctx, fmt.Sprintf("Result: %s", result))
 
-			// Avoid comparison on first attempt
-			if regexValueStoredAttempt == 0 {
-				firstAttemptRegexValue = result
-				regexValueStoredAttempt = attempt
-				return true
-			}
-			if firstAttemptRegexValue != result {
-				tflog.Warn(ctx, fmt.Sprintf("Got response %q, which does not match previous attempt %q", result, firstAttemptRegexValue))
-				diag.AddWarning("Check failed", fmt.Sprintf("Got response %q, which does not match previous attempt %q", result, firstAttemptRegexValue))
+			if previousRegexValue != result {
+				tflog.Warn(ctx, fmt.Sprintf("Got response %q, which does not match previous attempt %q", result, previousRegexValue))
+				diag.AddWarning("Check failed", fmt.Sprintf("Got response %q, which does not match previous attempt %q", result, previousRegexValue))
+
+				previousRegexValue = result
 				return false
 			}
 		}
