@@ -257,7 +257,7 @@ func (r *LocalCommandResource) RunCommand(ctx context.Context, data *LocalComman
 			tflog.Warn(ctx, fmt.Sprintf("ATTEMPT #%d exit_code=%d", attempt, err.(*exec.ExitError).ExitCode()))
 			data.Stdout = types.StringValue(stdout.String())
 			data.Stderr = types.StringValue(stderr.String())
-            tflog.Warn(ctx, fmt.Sprintf("Command string: sh -c %s", data.Command.ValueString()))
+			tflog.Warn(ctx, fmt.Sprintf("Command string: sh -c %s", data.Command.ValueString()))
 			tflog.Warn(ctx, fmt.Sprintf("Command stdout: %s", stdout.String()))
 			tflog.Warn(ctx, fmt.Sprintf("Command stderr: %s", stderr.String()))
 			return false
