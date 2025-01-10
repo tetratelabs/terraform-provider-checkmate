@@ -254,7 +254,7 @@ func (r *LocalCommandResource) RunCommand(ctx context.Context, data *LocalComman
 		}
 		err = cmd.Wait()
 		if err != nil {
-			tflog.Warn(ctx, fmt.Sprintf("ATTEMPT #%d exit_code=%d", attempt, err.(*exec.ExitError).ExitCode()))
+			tflog.Warn(ctx, fmt.Sprintf("ATTEMPT #%d exit_code=%d err=%s", attempt, err.(*exec.ExitError).ExitCode(), err.Error()))
 			data.Stdout = types.StringValue(stdout.String())
 			data.Stderr = types.StringValue(stderr.String())
 			tflog.Warn(ctx, fmt.Sprintf("Command string: sh -c %s", data.Command.ValueString()))
