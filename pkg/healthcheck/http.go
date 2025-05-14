@@ -111,7 +111,8 @@ func HealthCheck(ctx context.Context, data *HttpHealthArgs, diag *diag.Diagnosti
 
 	client := http.Client{
 		Transport: &http.Transport{
-			TLSClientConfig: tlsConfig,
+			TLSClientConfig:   tlsConfig,
+			ForceAttemptHTTP2: true,
 		},
 		Timeout: time.Duration(data.RequestTimeout) * time.Millisecond,
 	}
