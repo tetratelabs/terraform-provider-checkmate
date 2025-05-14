@@ -76,7 +76,7 @@ resource "checkmate_tcp_echo" %q {
 func testTCPEchoResourceRegex(name, regex string, ignore_failure bool) string {
 	return fmt.Sprintf(`
 resource "checkmate_tcp_echo" %q {
-	host = "tcpecho.platform.tetrate.com"
+	host = "tcpbin.platform.tetrate.com"
 	port = 15080
 	message = "foobar (123)"
 	timeout = 1000 * 10
